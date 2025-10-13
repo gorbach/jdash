@@ -215,3 +215,12 @@ func clearMatchHighlights(tree *JobTree) {
 		clearMatchHighlights(child)
 	}
 }
+
+// expandPathToNode ensures all ancestors of the node are expanded so the node is visible.
+func expandPathToNode(node *JobTree) {
+	for current := node; current != nil; current = current.Parent {
+		if current.IsFolder {
+			current.Expanded = true
+		}
+	}
+}

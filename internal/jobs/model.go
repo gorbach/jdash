@@ -46,6 +46,7 @@ func New(client *jenkins.Client) Model {
 	l.SetShowStatusBar(false)
 	l.SetShowHelp(false)
 	l.SetFilteringEnabled(false)
+	l.SetShowPagination(false)
 	l.Styles.Title = ui.TitleStyle
 
 	input := textinput.New()
@@ -151,9 +152,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (Model, tea.Cmd) {
 			}
 		}
 
-		if isSearchEditingKey(msg) {
-			return m, tea.Batch(cmds...)
-		}
+		// When search input is focused, prevent list from receiving any keyboard input
+		return m, tea.Batch(cmds...)
 	}
 
 	nodes := m.currentNodes()
@@ -192,7 +192,11 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.pageMove(-1, nodes)
 			return m, tea.Batch(cmds...)
 		case "enter":
-			// Placeholder for future story: open details from search results
+			// Commit the selection and reveal it in the tree.
+			expandPathToNode(currentNode)
+			m.exitSearchMode(false)
+			m.selectByFullName(currentNode.FullName)
+			// For non-folder jobs, placeholder for future story (show job details)
 			return m, tea.Batch(cmds...)
 		}
 	} else {
@@ -287,7 +291,7 @@ func (m *Model) handleSearchKey(msg tea.KeyMsg) (bool, tea.Cmd) {
 
 	case "esc":
 		if m.searchMode {
-			m.exitSearchMode()
+			m.exitSearchMode(true)
 			return true, nil
 		}
 		return false, nil
@@ -318,14 +322,14 @@ func (m *Model) handleSearchKey(msg tea.KeyMsg) (bool, tea.Cmd) {
 	return false, nil
 }
 
-func (m *Model) exitSearchMode() {
+func (m *Model) exitSearchMode(restorePrevious bool) {
 	m.searchTicket++
 	m.searchMode = false
 	m.searchInput.Blur()
 	m.searchInput.SetValue("")
 	m.applySearch("")
 	m.updateListDimensions()
-	if m.preSearchSelection != "" {
+	if restorePrevious && m.preSearchSelection != "" {
 		m.selectByFullName(m.preSearchSelection)
 	}
 	m.preSearchSelection = ""
@@ -404,28 +408,6 @@ func (m *Model) updateListDimensions() {
 		height = 0
 	}
 	m.list.SetSize(m.width, height)
-}
-
-func isSearchEditingKey(msg tea.KeyMsg) bool {
-	if msg.Type == tea.KeyRunes {
-		return true
-	}
-
-	switch msg.Type {
-	case tea.KeySpace,
-		tea.KeyBackspace,
-		tea.KeyCtrlW,
-		tea.KeyCtrlU,
-		tea.KeyCtrlH,
-		tea.KeyCtrlA,
-		tea.KeyCtrlE,
-		tea.KeyDelete,
-		tea.KeyLeft,
-		tea.KeyRight:
-		return true
-	}
-
-	return false
 }
 
 // refreshListItems updates the list with current visible tree nodes
