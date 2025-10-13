@@ -88,3 +88,92 @@ func (b *Build) GetTimestamp() time.Time {
 type JobsResponse struct {
 	Jobs []Job `json:"jobs"`
 }
+
+// QueueItem represents an item in the Jenkins build queue
+type QueueItem struct {
+	ID         int    `json:"id"`
+	Blocked    bool   `json:"blocked"`
+	Buildable  bool   `json:"buildable"`
+	Stuck      bool   `json:"stuck"`
+	Why        string `json:"why"`        // Reason for being in queue
+	InQueueSince int64 `json:"inQueueSince"` // Unix timestamp in milliseconds
+
+	// Task contains job information
+	Task struct {
+		Name  string `json:"name"`
+		URL   string `json:"url"`
+		Color string `json:"color"`
+	} `json:"task"`
+
+	// Executable contains build information if the item is currently building
+	Executable *struct {
+		Number int    `json:"number"`
+		URL    string `json:"url"`
+	} `json:"executable"`
+}
+
+// QueueResponse represents the response from Jenkins queue API
+type QueueResponse struct {
+	Items []QueueItem `json:"items"`
+}
+
+// IsBuilding returns true if this queue item is currently executing
+func (q *QueueItem) IsBuilding() bool {
+	return q.Executable != nil
+}
+
+// GetJobName returns the job name from the task
+func (q *QueueItem) GetJobName() string {
+	return q.Task.Name
+}
+
+// GetBuildNumber returns the build number if building, otherwise 0
+func (q *QueueItem) GetBuildNumber() int {
+	if q.Executable != nil {
+		return q.Executable.Number
+	}
+	return 0
+}
+
+// GetInQueueDuration returns how long this item has been in queue
+func (q *QueueItem) GetInQueueDuration() time.Duration {
+	now := time.Now().UnixMilli()
+	return time.Duration(now-q.InQueueSince) * time.Millisecond
+}
+
+// Executor represents a Jenkins executor (build slot)
+type Executor struct {
+	Idle             bool `json:"idle"`
+	CurrentExecutable *struct {
+		FullDisplayName string `json:"fullDisplayName"`
+		Number          int    `json:"number"`
+		URL             string `json:"url"`
+		Timestamp       int64  `json:"timestamp"` // Unix timestamp in milliseconds
+	} `json:"currentExecutable"`
+}
+
+// Computer represents a Jenkins node (master or agent)
+type Computer struct {
+	DisplayName string     `json:"displayName"`
+	Executors   []Executor `json:"executors"`
+}
+
+// ComputerResponse represents the response from Jenkins computer API
+type ComputerResponse struct {
+	Computer []Computer `json:"computer"`
+}
+
+// RunningBuild represents a build currently executing on an executor
+type RunningBuild struct {
+	JobName     string
+	BuildNumber int
+	StartTime   int64  // Unix timestamp in milliseconds
+	URL         string
+	Node        string
+}
+
+// GetElapsedTime returns how long this build has been running
+func (r *RunningBuild) GetElapsedTime() time.Duration {
+	now := time.Now().UnixMilli()
+	return time.Duration(now-r.StartTime) * time.Millisecond
+}

@@ -37,7 +37,7 @@ func New(serverURL string, client *jenkins.Client) Model {
 	return Model{
 		activePanel:  PanelJobs,
 		jobsPanel:    jobs.New(client),
-		queuePanel:   queue.New(),
+		queuePanel:   queue.New(client),
 		detailsPanel: details.New(),
 		statusBar:    statusbar.New(serverURL),
 		serverURL:    serverURL,

@@ -127,3 +127,74 @@ func (c *Client) GetAllJobs() ([]Job, error) {
 
 	return response.Jobs, nil
 }
+
+// GetBuildQueue fetches the current build queue from Jenkins
+// This includes both items waiting in queue and items currently executing
+func (c *Client) GetBuildQueue() ([]QueueItem, error) {
+	// Fetch queue with tree parameter to get all necessary fields
+	path := "/queue/api/json?tree=items[id,blocked,buildable,stuck,why,inQueueSince,task[name,url,color],executable[number,url]]"
+
+	resp, err := c.doRequest("GET", path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch build queue: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to fetch build queue: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var response QueueResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("failed to decode queue response: %w", err)
+	}
+
+	return response.Items, nil
+}
+
+// GetRunningBuilds fetches currently executing builds from all Jenkins executors
+// This checks all nodes (master and agents) and their executors
+func (c *Client) GetRunningBuilds() ([]RunningBuild, error) {
+	// Fetch computer information with executor details
+	path := "/computer/api/json?tree=computer[displayName,executors[idle,currentExecutable[fullDisplayName,number,url,timestamp]]]"
+
+	resp, err := c.doRequest("GET", path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch running builds: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to fetch running builds: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var response ComputerResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("failed to decode computer response: %w", err)
+	}
+
+	var builds []RunningBuild
+
+	// Loop through all nodes (computers)
+	for _, node := range response.Computer {
+		// Loop through all executors on this node
+		for _, executor := range node.Executors {
+			// Skip idle executors
+			if executor.Idle || executor.CurrentExecutable == nil {
+				continue
+			}
+
+			builds = append(builds, RunningBuild{
+				JobName:     executor.CurrentExecutable.FullDisplayName,
+				BuildNumber: executor.CurrentExecutable.Number,
+				StartTime:   executor.CurrentExecutable.Timestamp,
+				URL:         executor.CurrentExecutable.URL,
+				Node:        node.DisplayName,
+			})
+		}
+	}
+
+	return builds, nil
+}

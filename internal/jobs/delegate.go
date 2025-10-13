@@ -74,15 +74,21 @@ func (d jobDelegate) Render(w io.Writer, m list.Model, index int, item list.Item
 	// Job name
 	name := node.Name
 
-	// Metadata (duration and timestamp for non-folders)
+	// Metadata (status label, duration and timestamp for non-folders)
 	var metadata string
 	if node.Job != nil && !node.IsFolder {
+		jobStatus := node.Job.GetStatus()
+		statusStyle := ui.GetStatusStyle(jobStatus)
+		statusLabel := statusStyle.Render(fmt.Sprintf("[%s]", jobStatus))
+
 		if node.Job.LastBuild != nil {
 			duration := utils.FormatDuration(node.Job.LastBuild.GetDuration())
 			timestamp := utils.FormatRelativeTime(node.Job.LastBuild.GetTimestamp())
-			metadata = ui.SubtleStyle.Render(fmt.Sprintf("  %s  %s", duration, timestamp))
+			metadata = fmt.Sprintf("  %s  %s  %s", statusLabel,
+				ui.SubtleStyle.Render(duration),
+				ui.SubtleStyle.Render(timestamp))
 		} else {
-			metadata = ui.SubtleStyle.Render("  never built")
+			metadata = fmt.Sprintf("  %s  %s", statusLabel, ui.SubtleStyle.Render("never built"))
 		}
 	}
 
