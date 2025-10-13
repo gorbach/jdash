@@ -23,11 +23,6 @@ func New(serverURL string) Model {
 	}
 }
 
-// SetWidth sets the width of the status bar
-func (m *Model) SetWidth(width int) {
-	m.width = width
-}
-
 // SetJobCount updates the job count
 func (m *Model) SetJobCount(count int) {
 	m.jobCount = count
@@ -43,8 +38,12 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
-// Update handles messages
+// Update handles messages following TEA patterns
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+	}
 	return m, nil
 }
 

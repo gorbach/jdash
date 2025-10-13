@@ -55,113 +55,161 @@ func (m Model) Init() tea.Cmd {
 	)
 }
 
-// Update handles messages
+// Update handles messages following TEA message routing patterns:
+// 1. Handle global keys in root model (quit, panel switching)
+// 2. Broadcast WindowSizeMsg to all children with panel-specific dimensions
+// 3. Route KeyMsg to active panel only
+// 4. Broadcast other messages to all children (custom messages, ticks, etc.)
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
-
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-
-		// Calculate panel dimensions
-		statusBarHeight := 1
-		topPanelHeight := (m.height - statusBarHeight) * 2 / 3
-		bottomPanelHeight := (m.height - statusBarHeight) - topPanelHeight
-		leftPanelWidth := m.width / 2
-		rightPanelWidth := m.width - leftPanelWidth
-
-		// Account for borders (2px per side)
-		jobsPanelWidth := leftPanelWidth - 4
-		jobsPanelHeight := topPanelHeight - 4
-		queuePanelWidth := rightPanelWidth - 4
-		queuePanelHeight := topPanelHeight - 4
-		detailsPanelWidth := m.width - 4
-		detailsPanelHeight := bottomPanelHeight - 4
-
-		// Send panel-specific dimensions to each child
-		var cmd tea.Cmd
-		m.jobsPanel, cmd = m.jobsPanel.Update(tea.WindowSizeMsg{
-			Width:  jobsPanelWidth,
-			Height: jobsPanelHeight,
-		})
-		cmds = append(cmds, cmd)
-
-		m.queuePanel, cmd = m.queuePanel.Update(tea.WindowSizeMsg{
-			Width:  queuePanelWidth,
-			Height: queuePanelHeight,
-		})
-		cmds = append(cmds, cmd)
-
-		m.detailsPanel, cmd = m.detailsPanel.Update(tea.WindowSizeMsg{
-			Width:  detailsPanelWidth,
-			Height: detailsPanelHeight,
-		})
-		cmds = append(cmds, cmd)
-
-		m.statusBar.SetWidth(msg.Width)
-
-		return m, tea.Batch(cmds...)
+		return m.handleWindowResize(msg)
 
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q":
-			return m, tea.Quit
-
-		case "tab":
-			m.activePanel = (m.activePanel + 1) % 3
-			return m, nil
-
-		case "shift+tab":
-			m.activePanel = (m.activePanel - 1 + 3) % 3
-			return m, nil
-
-		case "1":
-			m.activePanel = PanelJobs
-			return m, nil
-
-		case "2":
-			m.activePanel = PanelQueue
-			return m, nil
-
-		case "3":
-			m.activePanel = PanelDetails
-			return m, nil
-
-		case "?":
-			// TODO: Show help overlay
-			return m, nil
+		// Handle global navigation keys first
+		if handled, newModel, cmd := m.handleGlobalKeys(msg); handled {
+			return newModel, cmd
 		}
+		// Not a global key, route to active panel
+		return m.routeKeyToActivePanel(msg)
 	}
 
-	// Always update jobs panel to handle its messages (loading, etc.)
-	// Skip WindowSizeMsg since we handle it explicitly above with panel-specific dimensions
-	if _, isWindowSize := msg.(tea.WindowSizeMsg); !isWindowSize {
-		var cmd tea.Cmd
+	// Broadcast all other messages to all panels
+	return m.broadcastToAllPanels(msg)
+}
+
+// handleWindowResize updates dimensions and broadcasts to all panels
+func (m Model) handleWindowResize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
+	m.width = msg.Width
+	m.height = msg.Height
+
+	// Calculate dimensions once
+	dims := m.calculatePanelDimensions()
+
+	var cmds []tea.Cmd
+	var cmd tea.Cmd
+
+	// Send panel-specific dimensions to each child
+	m.jobsPanel, cmd = m.jobsPanel.Update(tea.WindowSizeMsg{
+		Width:  dims.jobsWidth,
+		Height: dims.jobsHeight,
+	})
+	cmds = append(cmds, cmd)
+
+	m.queuePanel, cmd = m.queuePanel.Update(tea.WindowSizeMsg{
+		Width:  dims.queueWidth,
+		Height: dims.queueHeight,
+	})
+	cmds = append(cmds, cmd)
+
+	m.detailsPanel, cmd = m.detailsPanel.Update(tea.WindowSizeMsg{
+		Width:  dims.detailsWidth,
+		Height: dims.detailsHeight,
+	})
+	cmds = append(cmds, cmd)
+
+	m.statusBar, cmd = m.statusBar.Update(tea.WindowSizeMsg{
+		Width: msg.Width,
+	})
+	cmds = append(cmds, cmd)
+
+	return m, tea.Batch(cmds...)
+}
+
+// panelDimensions holds calculated dimensions for all panels
+type panelDimensions struct {
+	jobsWidth, jobsHeight       int
+	queueWidth, queueHeight     int
+	detailsWidth, detailsHeight int
+}
+
+// calculatePanelDimensions computes dimensions for all panels based on terminal size
+func (m Model) calculatePanelDimensions() panelDimensions {
+	statusBarHeight := 1
+	topPanelHeight := (m.height - statusBarHeight) * 2 / 3
+	bottomPanelHeight := (m.height - statusBarHeight) - topPanelHeight
+	leftPanelWidth := m.width / 2
+	rightPanelWidth := m.width - leftPanelWidth
+
+	// Account for borders (2px per side) and padding
+	return panelDimensions{
+		jobsWidth:    leftPanelWidth - 4,
+		jobsHeight:   topPanelHeight - 4,
+		queueWidth:   rightPanelWidth - 4,
+		queueHeight:  topPanelHeight - 4,
+		detailsWidth: m.width - 4,
+		detailsHeight: bottomPanelHeight - 4,
+	}
+}
+
+// handleGlobalKeys processes global navigation keys (quit, panel switching)
+// Returns (handled, model, cmd) - handled indicates if the key was processed
+func (m Model) handleGlobalKeys(msg tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "q":
+		return true, m, tea.Quit
+
+	case "tab":
+		m.activePanel = (m.activePanel + 1) % 3
+		return true, m, nil
+
+	case "shift+tab":
+		m.activePanel = (m.activePanel - 1 + 3) % 3
+		return true, m, nil
+
+	case "1":
+		m.activePanel = PanelJobs
+		return true, m, nil
+
+	case "2":
+		m.activePanel = PanelQueue
+		return true, m, nil
+
+	case "3":
+		m.activePanel = PanelDetails
+		return true, m, nil
+
+	case "?":
+		// TODO: Show help overlay
+		return true, m, nil
+	}
+
+	return false, m, nil // Not handled, continue routing
+}
+
+// routeKeyToActivePanel forwards keyboard input to the currently focused panel
+func (m Model) routeKeyToActivePanel(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch m.activePanel {
+	case PanelJobs:
 		m.jobsPanel, cmd = m.jobsPanel.Update(msg)
-		cmds = append(cmds, cmd)
+	case PanelQueue:
+		m.queuePanel, cmd = m.queuePanel.Update(msg)
+	case PanelDetails:
+		m.detailsPanel, cmd = m.detailsPanel.Update(msg)
 	}
 
-	// Route messages to other panels (skip WindowSizeMsg - handled above)
-	if _, isWindowSize := msg.(tea.WindowSizeMsg); !isWindowSize {
-		var cmd tea.Cmd
+	return m, cmd
+}
 
-		// Route key messages to active panel
-		if _, ok := msg.(tea.KeyMsg); ok {
-			switch m.activePanel {
-			case PanelQueue:
-				m.queuePanel, cmd = m.queuePanel.Update(msg)
-				cmds = append(cmds, cmd)
-			case PanelDetails:
-				m.detailsPanel, cmd = m.detailsPanel.Update(msg)
-				cmds = append(cmds, cmd)
-			}
-		}
+// broadcastToAllPanels sends messages that all panels need (custom messages, spinner ticks, etc.)
+func (m Model) broadcastToAllPanels(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+	var cmd tea.Cmd
 
-		// Always update status bar
-		m.statusBar, cmd = m.statusBar.Update(msg)
-		cmds = append(cmds, cmd)
-	}
+	// All panels receive custom messages (loading states, data fetched, etc.)
+	m.jobsPanel, cmd = m.jobsPanel.Update(msg)
+	cmds = append(cmds, cmd)
+
+	m.queuePanel, cmd = m.queuePanel.Update(msg)
+	cmds = append(cmds, cmd)
+
+	m.detailsPanel, cmd = m.detailsPanel.Update(msg)
+	cmds = append(cmds, cmd)
+
+	m.statusBar, cmd = m.statusBar.Update(msg)
+	cmds = append(cmds, cmd)
 
 	return m, tea.Batch(cmds...)
 }
