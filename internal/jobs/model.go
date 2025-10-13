@@ -14,23 +14,24 @@ import (
 
 // Model represents the jobs list panel
 type Model struct {
-	client             *jenkins.Client
-	tree               *JobTree
-	allJobs            []jenkins.Job
-	list               list.Model
-	loading            bool
-	spinner            spinner.Model
-	err                error
-	width              int
-	height             int
-	searchMode         bool
-	searchQuery        string
-	searchInput        textinput.Model
-	searchResults      []*JobTree
-	searchCatalog      []*JobTree
-	searchTicket       uint64
-	totalSearchable    int
-	preSearchSelection string
+	client               *jenkins.Client
+	tree                 *JobTree
+	allJobs              []jenkins.Job
+	list                 list.Model
+	loading              bool
+	spinner              spinner.Model
+	err                  error
+	width                int
+	height               int
+	searchMode           bool
+	searchQuery          string
+	searchInput          textinput.Model
+	searchResults        []*JobTree
+	searchCatalog        []*JobTree
+	searchTicket         uint64
+	totalSearchable      int
+	preSearchSelection   string
+	lastSelectedFullName string
 }
 
 // New creates a new jobs panel model
@@ -80,12 +81,14 @@ func (m Model) Init() tea.Cmd {
 
 // Update handles messages
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		m.updateListDimensions()
-		return m, nil
+		return finalizeJobsModel(m, cmds)
 
 	case JobsFetchedMsg:
 		m.loading = false
@@ -96,35 +99,49 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.searchCatalog = collectAllNodes(m.tree)
 		m.totalSearchable = len(m.searchCatalog)
 		m.refreshListItems()
-		return m, nil
+		m.lastSelectedFullName = ""
+		return finalizeJobsModel(m, cmds)
 
 	case JobsErrorMsg:
 		m.loading = false
 		m.err = msg.Err
-		return m, nil
+		m.tree = nil
+		m.allJobs = nil
+		m.list.SetItems([]list.Item{})
+		return finalizeJobsModel(m, cmds)
 
 	case spinner.TickMsg:
 		if m.loading {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
-			return m, cmd
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 		}
-		return m, nil
+		return finalizeJobsModel(m, cmds)
 
 	case searchQueuedMsg:
 		if msg.Ticket != m.searchTicket {
-			return m, nil
+			return finalizeJobsModel(m, cmds)
 		}
 		m.applySearch(msg.Query)
-		return m, nil
+		return finalizeJobsModel(m, cmds)
 
 	case tea.KeyMsg:
-		return m.handleKeyMsg(msg)
+		var cmd tea.Cmd
+		m, cmd = m.handleKeyMsg(msg)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return finalizeJobsModel(m, cmds)
 	}
 
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
-	return m, cmd
+	if cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	return finalizeJobsModel(m, cmds)
 }
 
 func (m Model) handleKeyMsg(msg tea.KeyMsg) (Model, tea.Cmd) {
@@ -196,7 +213,9 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (Model, tea.Cmd) {
 			expandPathToNode(currentNode)
 			m.exitSearchMode(false)
 			m.selectByFullName(currentNode.FullName)
-			// For non-folder jobs, placeholder for future story (show job details)
+			if !currentNode.IsFolder && currentNode.Job != nil {
+				cmds = append(cmds, jobSelectedCmd(*currentNode.Job))
+			}
 			return m, tea.Batch(cmds...)
 		}
 	} else {
@@ -232,7 +251,9 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 
 		case "enter":
-			// Placeholder for story 6
+			if !currentNode.IsFolder && currentNode.Job != nil {
+				cmds = append(cmds, jobSelectedCmd(*currentNode.Job))
+			}
 			return m, tea.Batch(cmds...)
 
 		case "j", "down":
@@ -477,6 +498,40 @@ func (m *Model) selectNode(target *JobTree) {
 			return
 		}
 	}
+}
+
+func finalizeJobsModel(m Model, cmds []tea.Cmd) (Model, tea.Cmd) {
+	if cmd := (&m).selectionChangedCmd(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	return m, tea.Batch(cmds...)
+}
+
+func (m *Model) currentSelectionNode() *JobTree {
+	nodes := m.currentNodes()
+	idx := m.list.Index()
+	if idx >= 0 && idx < len(nodes) {
+		return nodes[idx]
+	}
+	return nil
+}
+
+func (m *Model) selectionChangedCmd() tea.Cmd {
+	node := m.currentSelectionNode()
+	if node == nil || node.Job == nil || node.IsFolder {
+		if m.lastSelectedFullName == "" {
+			return nil
+		}
+		m.lastSelectedFullName = ""
+		return jobSelectionClearedCmd()
+	}
+
+	if node.FullName == m.lastSelectedFullName {
+		return nil
+	}
+
+	m.lastSelectedFullName = node.FullName
+	return jobSelectedCmd(*node.Job)
 }
 
 // selectIndex moves the selection to an absolute index with wrap-around support.

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -197,4 +199,74 @@ func (c *Client) GetRunningBuilds() ([]RunningBuild, error) {
 	}
 
 	return builds, nil
+}
+
+// GetJobDetails fetches detailed information about a specific job, including recent builds.
+func (c *Client) GetJobDetails(fullName string, limit int) (*JobDetails, error) {
+	if fullName == "" {
+		return nil, fmt.Errorf("job name must not be empty")
+	}
+
+	if limit <= 0 || limit > 50 {
+		limit = 10
+	}
+
+	jobPath := buildJobAPIPath(fullName)
+	if jobPath == "" {
+		return nil, fmt.Errorf("invalid job path for %q", fullName)
+	}
+
+	tree := fmt.Sprintf(
+		"name,fullName,url,color,_class,description,"+
+			"lastBuild[number,result,duration,timestamp,building,url,actions[causes[shortDescription,userId,userName],parameters[name,value],lastBuiltRevision[branch[SHA1,name]]]],"+
+			"builds[number,result,duration,timestamp,building,url,actions[causes[shortDescription,userId,userName],parameters[name,value],lastBuiltRevision[branch[SHA1,name]]]]{%d}",
+		limit,
+	)
+
+	params := url.Values{}
+	params.Set("tree", tree)
+
+	path := fmt.Sprintf("%s/api/json?%s", jobPath, params.Encode())
+
+	resp, err := c.doRequest("GET", path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch job details: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to fetch job details: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var details JobDetails
+	if err := json.NewDecoder(resp.Body).Decode(&details); err != nil {
+		return nil, fmt.Errorf("failed to decode job details: %w", err)
+	}
+
+	if len(details.Builds) > limit {
+		details.Builds = details.Builds[:limit]
+	}
+
+	return &details, nil
+}
+
+// buildJobAPIPath converts a Jenkins job full name (with / separators) into the /job/... API path.
+func buildJobAPIPath(fullName string) string {
+	if fullName == "" {
+		return ""
+	}
+
+	segments := strings.Split(fullName, "/")
+	var builder strings.Builder
+	for _, segment := range segments {
+		segment = strings.TrimSpace(segment)
+		if segment == "" {
+			continue
+		}
+		builder.WriteString("/job/")
+		builder.WriteString(url.PathEscape(segment))
+	}
+
+	return builder.String()
 }

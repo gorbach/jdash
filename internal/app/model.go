@@ -38,7 +38,7 @@ func New(serverURL string, client *jenkins.Client) Model {
 		activePanel:  PanelJobs,
 		jobsPanel:    jobs.New(client),
 		queuePanel:   queue.New(client),
-		detailsPanel: details.New(),
+		detailsPanel: details.New(client),
 		statusBar:    statusbar.New(serverURL),
 		serverURL:    serverURL,
 		client:       client,
@@ -133,11 +133,11 @@ func (m Model) calculatePanelDimensions() panelDimensions {
 
 	// Account for borders (2px per side) and padding
 	return panelDimensions{
-		jobsWidth:    leftPanelWidth - 4,
-		jobsHeight:   topPanelHeight - 4,
-		queueWidth:   rightPanelWidth - 4,
-		queueHeight:  topPanelHeight - 4,
-		detailsWidth: m.width - 4,
+		jobsWidth:     leftPanelWidth - 4,
+		jobsHeight:    topPanelHeight - 4,
+		queueWidth:    rightPanelWidth - 4,
+		queueHeight:   topPanelHeight - 4,
+		detailsWidth:  m.width - 4,
 		detailsHeight: bottomPanelHeight - 4,
 	}
 }
@@ -255,8 +255,8 @@ func (m Model) renderPanel(id PanelID, content string, width, height int) string
 	}
 
 	style := lipgloss.NewStyle().
-		Width(width - 2).  // Account for border
-		Height(height - 2). // Account for border
+		Width(width-2).   // Account for border
+		Height(height-2). // Account for border
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
 		Padding(0, 1)

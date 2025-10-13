@@ -1,13 +1,18 @@
 package jenkins
 
-import "time"
+import (
+	"fmt"
+	"strings"
+	"time"
+)
 
 // Job represents a Jenkins job (can be a regular job or a folder)
 type Job struct {
-	Name     string `json:"name"`
-	FullName string `json:"fullName"`
-	URL      string `json:"url"`
-	Color    string `json:"color"` // Color indicates status: blue=success, red=failed, yellow=unstable, grey=disabled, etc.
+	Name        string `json:"name"`
+	FullName    string `json:"fullName"`
+	URL         string `json:"url"`
+	Color       string `json:"color"` // Color indicates status: blue=success, red=failed, yellow=unstable, grey=disabled, etc.
+	Description string `json:"description"`
 
 	// LastBuild contains information about the most recent build
 	LastBuild *Build `json:"lastBuild"`
@@ -21,12 +26,13 @@ type Job struct {
 
 // Build represents a Jenkins build
 type Build struct {
-	Number    int    `json:"number"`
-	Result    string `json:"result"` // SUCCESS, FAILURE, UNSTABLE, ABORTED, null (building)
-	Duration  int64  `json:"duration"` // Duration in milliseconds
-	Timestamp int64  `json:"timestamp"` // Unix timestamp in milliseconds
-	Building  bool   `json:"building"`
-	URL       string `json:"url"`
+	Number    int           `json:"number"`
+	Result    string        `json:"result"`    // SUCCESS, FAILURE, UNSTABLE, ABORTED, null (building)
+	Duration  int64         `json:"duration"`  // Duration in milliseconds
+	Timestamp int64         `json:"timestamp"` // Unix timestamp in milliseconds
+	Building  bool          `json:"building"`
+	URL       string        `json:"url"`
+	Actions   []BuildAction `json:"actions"`
 }
 
 // IsFolder returns true if this job is a folder containing other jobs
@@ -84,6 +90,105 @@ func (b *Build) GetTimestamp() time.Time {
 	return time.Unix(b.Timestamp/1000, (b.Timestamp%1000)*int64(time.Millisecond))
 }
 
+// GetStatus returns a normalized status string for display
+func (b *Build) GetStatus() string {
+	if b == nil {
+		return ""
+	}
+	if b.Building {
+		return "BUILDING"
+	}
+	if b.Result == "" {
+		return "UNKNOWN"
+	}
+	return strings.ToUpper(b.Result)
+}
+
+// GetTriggeredBy attempts to extract the triggering user or cause from build actions.
+func (b *Build) GetTriggeredBy() string {
+	if b == nil {
+		return ""
+	}
+	for _, action := range b.Actions {
+		for _, cause := range action.Causes {
+			if cause.UserName != "" {
+				return cause.UserName
+			}
+			if cause.UserID != "" {
+				return cause.UserID
+			}
+			if cause.ShortDescription != "" {
+				return cause.ShortDescription
+			}
+		}
+	}
+	return ""
+}
+
+// GetBranch tries to determine the source branch from build actions.
+func (b *Build) GetBranch() string {
+	if b == nil {
+		return ""
+	}
+
+	for _, action := range b.Actions {
+		if action.LastBuiltRevision != nil {
+			for _, branch := range action.LastBuiltRevision.Branches {
+				if branch.Name != "" {
+					return branch.Name
+				}
+			}
+		}
+		for _, param := range action.Parameters {
+			if strings.EqualFold(param.Name, "branch") ||
+				strings.EqualFold(param.Name, "branch_name") ||
+				strings.EqualFold(param.Name, "git_branch") {
+				return fmt.Sprint(param.Value)
+			}
+		}
+	}
+
+	return ""
+}
+
+// BuildAction represents additional metadata attached to a build.
+type BuildAction struct {
+	Class             string           `json:"_class"`
+	Causes            []BuildCause     `json:"causes"`
+	Parameters        []BuildParameter `json:"parameters"`
+	LastBuiltRevision *BuildRevision   `json:"lastBuiltRevision"`
+}
+
+// BuildCause describes what triggered a build.
+type BuildCause struct {
+	ShortDescription string `json:"shortDescription"`
+	UserID           string `json:"userId"`
+	UserName         string `json:"userName"`
+}
+
+// BuildParameter represents a parameter passed to the build.
+type BuildParameter struct {
+	Name  string      `json:"name"`
+	Value interface{} `json:"value"`
+}
+
+// BuildRevision contains revision information for SCM-based jobs.
+type BuildRevision struct {
+	Branches []BuildBranch `json:"branch"`
+}
+
+// BuildBranch represents a single SCM branch reference.
+type BuildBranch struct {
+	SHA1 string `json:"SHA1"`
+	Name string `json:"name"`
+}
+
+// JobDetails provides expanded information about a Jenkins job.
+type JobDetails struct {
+	Job
+	Builds []Build `json:"builds"`
+}
+
 // JobsResponse represents the response from Jenkins API when fetching all jobs
 type JobsResponse struct {
 	Jobs []Job `json:"jobs"`
@@ -91,12 +196,12 @@ type JobsResponse struct {
 
 // QueueItem represents an item in the Jenkins build queue
 type QueueItem struct {
-	ID         int    `json:"id"`
-	Blocked    bool   `json:"blocked"`
-	Buildable  bool   `json:"buildable"`
-	Stuck      bool   `json:"stuck"`
-	Why        string `json:"why"`        // Reason for being in queue
-	InQueueSince int64 `json:"inQueueSince"` // Unix timestamp in milliseconds
+	ID           int    `json:"id"`
+	Blocked      bool   `json:"blocked"`
+	Buildable    bool   `json:"buildable"`
+	Stuck        bool   `json:"stuck"`
+	Why          string `json:"why"`          // Reason for being in queue
+	InQueueSince int64  `json:"inQueueSince"` // Unix timestamp in milliseconds
 
 	// Task contains job information
 	Task struct {
@@ -143,7 +248,7 @@ func (q *QueueItem) GetInQueueDuration() time.Duration {
 
 // Executor represents a Jenkins executor (build slot)
 type Executor struct {
-	Idle             bool `json:"idle"`
+	Idle              bool `json:"idle"`
 	CurrentExecutable *struct {
 		FullDisplayName string `json:"fullDisplayName"`
 		Number          int    `json:"number"`
@@ -167,7 +272,7 @@ type ComputerResponse struct {
 type RunningBuild struct {
 	JobName     string
 	BuildNumber int
-	StartTime   int64  // Unix timestamp in milliseconds
+	StartTime   int64 // Unix timestamp in milliseconds
 	URL         string
 	Node        string
 }
