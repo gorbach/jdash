@@ -8,13 +8,14 @@ import (
 
 // JobTree represents a node in the hierarchical job tree
 type JobTree struct {
-	Name     string      // Display name (not full path)
-	FullName string      // Full path (e.g., "Production/Backend/api-service")
-	IsFolder bool        // True if this is a folder containing other jobs
-	Expanded bool        // True if folder is expanded (children visible)
-	Children []*JobTree  // Child nodes (jobs or folders)
+	Name     string       // Display name (not full path)
+	FullName string       // Full path (e.g., "Production/Backend/api-service")
+	IsFolder bool         // True if this is a folder containing other jobs
+	Expanded bool         // True if folder is expanded (children visible)
+	Children []*JobTree   // Child nodes (jobs or folders)
 	Job      *jenkins.Job // Actual job data (nil for folders without job data)
-	Level    int         // Nesting level (0 = root)
+	Level    int          // Nesting level (0 = root)
+	Parent   *JobTree     // Parent reference (nil for root)
 }
 
 // FilterValue implements list.Item interface for bubbles/list filtering
@@ -51,6 +52,7 @@ func addJobToTree(parent *JobTree, job jenkins.Job, level int) {
 		Children: []*JobTree{},
 		Job:      &job,
 		Level:    level,
+		Parent:   parent,
 	}
 
 	// Add nested jobs if this is a folder
