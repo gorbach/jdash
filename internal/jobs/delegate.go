@@ -3,6 +3,7 @@ package jobs
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -39,20 +40,25 @@ func (d jobDelegate) Render(w io.Writer, m list.Model, index int, item list.Item
 		return
 	}
 
-	// Indentation based on level
-	indent := getIndentation(node.Level)
+	// Indentation based on level (skip for search results to align matches)
+	indent := ""
+	if !node.SearchResult {
+		indent = getIndentation(node.Level)
+	}
 
-	// Expansion icon
+	// Expansion icon (only relevant in tree mode)
 	var expandIcon string
-	if node.IsFolder {
-		if node.Expanded {
-			expandIcon = ui.IconExpanded
+	if !node.SearchResult {
+		if node.IsFolder {
+			if node.Expanded {
+				expandIcon = ui.IconExpanded
+			} else {
+				expandIcon = ui.IconCollapsed
+			}
+			expandIcon += " "
 		} else {
-			expandIcon = ui.IconCollapsed
+			expandIcon = "  "
 		}
-		expandIcon += " "
-	} else {
-		expandIcon = "  "
 	}
 
 	// Status icon and styling
@@ -73,6 +79,12 @@ func (d jobDelegate) Render(w io.Writer, m list.Model, index int, item list.Item
 
 	// Job name
 	name := node.Name
+	if node.SearchResult {
+		name = node.FullName
+	}
+	if len(node.MatchIndexes) > 0 {
+		name = renderHighlightedText(name, node.MatchIndexes)
+	}
 
 	// Metadata (status label, duration and timestamp for non-folders)
 	var metadata string
@@ -93,7 +105,14 @@ func (d jobDelegate) Render(w io.Writer, m list.Model, index int, item list.Item
 	}
 
 	// Combine parts
-	line := indent + expandIcon + status + " " + name + metadata
+	var builder strings.Builder
+	builder.WriteString(indent)
+	builder.WriteString(expandIcon)
+	builder.WriteString(status)
+	builder.WriteString(" ")
+	builder.WriteString(name)
+	builder.WriteString(metadata)
+	line := builder.String()
 
 	// Apply selection style if this item is selected
 	if index == m.Index() {
@@ -101,4 +120,28 @@ func (d jobDelegate) Render(w io.Writer, m list.Model, index int, item list.Item
 	}
 
 	fmt.Fprint(w, line)
+}
+
+func renderHighlightedText(text string, indexes []int) string {
+	if len(indexes) == 0 {
+		return text
+	}
+
+	runes := []rune(text)
+	highlight := make(map[int]struct{}, len(indexes))
+	for _, idx := range indexes {
+		highlight[idx] = struct{}{}
+	}
+
+	var b strings.Builder
+	for i, r := range runes {
+		ch := string(r)
+		if _, ok := highlight[i]; ok {
+			b.WriteString(ui.SearchHighlightStyle.Render(ch))
+		} else {
+			b.WriteString(ch)
+		}
+	}
+
+	return b.String()
 }

@@ -14,17 +14,18 @@ var (
 	ColorPending  = lipgloss.Color("8")  // Gray
 
 	// UI colors
-	ColorBorder       = lipgloss.Color("8")  // Dim gray
-	ColorBorderActive = lipgloss.Color("10") // Bright green
-	ColorTitle        = lipgloss.Color("12") // Bright blue
-	ColorSubtle       = lipgloss.Color("8")  // Dim gray
-	ColorHighlight    = lipgloss.Color("14") // Bright cyan
+	ColorBorder          = lipgloss.Color("8")  // Dim gray
+	ColorBorderActive    = lipgloss.Color("10") // Bright green
+	ColorTitle           = lipgloss.Color("12") // Bright blue
+	ColorSubtle          = lipgloss.Color("8")  // Dim gray
+	ColorHighlight       = lipgloss.Color("14") // Bright cyan
+	ColorSearchHighlight = lipgloss.Color("11") // Bright yellow
 )
 
 // Status styles
 var (
-	SuccessStyle = lipgloss.NewStyle().Foreground(ColorSuccess)
-	FailedStyle  = lipgloss.NewStyle().Foreground(ColorFailed)
+	SuccessStyle  = lipgloss.NewStyle().Foreground(ColorSuccess)
+	FailedStyle   = lipgloss.NewStyle().Foreground(ColorFailed)
 	BuildingStyle = lipgloss.NewStyle().Foreground(ColorBuilding)
 	DisabledStyle = lipgloss.NewStyle().Foreground(ColorDisabled)
 	UnstableStyle = lipgloss.NewStyle().Foreground(ColorUnstable)
@@ -44,6 +45,10 @@ var (
 	HighlightStyle = lipgloss.NewStyle().
 			Foreground(ColorHighlight).
 			Bold(true)
+
+	SearchHighlightStyle = lipgloss.NewStyle().
+				Foreground(ColorSearchHighlight).
+				Bold(true)
 
 	ErrorStyle = lipgloss.NewStyle().
 			Foreground(ColorFailed).

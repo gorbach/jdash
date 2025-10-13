@@ -8,14 +8,16 @@ import (
 
 // JobTree represents a node in the hierarchical job tree
 type JobTree struct {
-	Name     string       // Display name (not full path)
-	FullName string       // Full path (e.g., "Production/Backend/api-service")
-	IsFolder bool         // True if this is a folder containing other jobs
-	Expanded bool         // True if folder is expanded (children visible)
-	Children []*JobTree   // Child nodes (jobs or folders)
-	Job      *jenkins.Job // Actual job data (nil for folders without job data)
-	Level    int          // Nesting level (0 = root)
-	Parent   *JobTree     // Parent reference (nil for root)
+	Name         string       // Display name (not full path)
+	FullName     string       // Full path (e.g., "Production/Backend/api-service")
+	IsFolder     bool         // True if this is a folder containing other jobs
+	Expanded     bool         // True if folder is expanded (children visible)
+	Children     []*JobTree   // Child nodes (jobs or folders)
+	Job          *jenkins.Job // Actual job data (nil for folders without job data)
+	Level        int          // Nesting level (0 = root)
+	Parent       *JobTree     // Parent reference (nil for root)
+	MatchIndexes []int        // Rune indexes of fuzzy match for highlighting
+	SearchResult bool         // True when node is part of current search results
 }
 
 // FilterValue implements list.Item interface for bubbles/list filtering
@@ -177,4 +179,39 @@ func getTotalJobCount(tree *JobTree) int {
 	}
 
 	return count
+}
+
+// collectAllNodes returns all tree nodes excluding the synthetic root.
+func collectAllNodes(tree *JobTree) []*JobTree {
+	if tree == nil {
+		return nil
+	}
+
+	var nodes []*JobTree
+
+	var walk func(node *JobTree)
+	walk = func(node *JobTree) {
+		if node.Level >= 0 {
+			nodes = append(nodes, node)
+		}
+		for _, child := range node.Children {
+			walk(child)
+		}
+	}
+
+	walk(tree)
+	return nodes
+}
+
+// clearMatchHighlights removes search-related state from the tree.
+func clearMatchHighlights(tree *JobTree) {
+	if tree == nil {
+		return
+	}
+
+	tree.MatchIndexes = nil
+	tree.SearchResult = false
+	for _, child := range tree.Children {
+		clearMatchHighlights(child)
+	}
 }
