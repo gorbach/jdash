@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -16,6 +17,10 @@ type Client struct {
 	Username   string
 	Token      string
 	HTTPClient *http.Client
+
+	crumb         *Crumb
+	crumbDisabled bool
+	crumbMu       sync.Mutex
 }
 
 // Credentials holds Jenkins authentication information
@@ -37,8 +42,14 @@ func NewClient(creds Credentials) *Client {
 	}
 }
 
+// Crumb represents a Jenkins CSRF token
+type Crumb struct {
+	CrumbRequestField string `json:"crumbRequestField"`
+	Crumb             string `json:"crumb"`
+}
+
 // doRequest performs an HTTP request with basic auth
-func (c *Client) doRequest(method, path string, body io.Reader) (*http.Response, error) {
+func (c *Client) doRequest(method, path string, body io.Reader, headers map[string]string) (*http.Response, error) {
 	url := c.BaseURL + path
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
@@ -47,15 +58,88 @@ func (c *Client) doRequest(method, path string, body io.Reader) (*http.Response,
 
 	// Set basic auth
 	req.SetBasicAuth(c.Username, c.Token)
-	req.Header.Set("Content-Type", "application/json")
+
+	// Apply default headers
+	if headers == nil || headers["Accept"] == "" {
+		req.Header.Set("Accept", "application/json")
+	}
+	if body != nil && (headers == nil || headers["Content-Type"] == "") {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+
+	// Attach crumb for mutating requests
+	if requiresCrumb(method) {
+		if err := c.ensureCrumb(); err != nil {
+			return nil, err
+		}
+		if c.crumb != nil {
+			req.Header.Set(c.crumb.CrumbRequestField, c.crumb.Crumb)
+		}
+	}
 
 	return c.HTTPClient.Do(req)
+}
+
+func requiresCrumb(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
+		return false
+	default:
+		return true
+	}
+}
+
+func (c *Client) ensureCrumb() error {
+	c.crumbMu.Lock()
+	defer c.crumbMu.Unlock()
+
+	if c.crumb != nil || c.crumbDisabled {
+		return nil
+	}
+
+	req, err := http.NewRequest(http.MethodGet, c.BaseURL+"/crumbIssuer/api/json", nil)
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth(c.Username, c.Token)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to request crumb: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var crumb Crumb
+		if err := json.NewDecoder(resp.Body).Decode(&crumb); err != nil {
+			return fmt.Errorf("failed to decode crumb: %w", err)
+		}
+		if crumb.CrumbRequestField == "" || crumb.Crumb == "" {
+			return fmt.Errorf("received empty crumb from Jenkins")
+		}
+		c.crumb = &crumb
+		return nil
+
+	case http.StatusNotFound, http.StatusForbidden:
+		// Jenkins crumbs disabled or unsupported; continue without them.
+		c.crumbDisabled = true
+		return nil
+
+	default:
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to fetch crumb: status %d, body: %s", resp.StatusCode, string(body))
+	}
 }
 
 // TestConnection tests the connection to Jenkins server
 // Returns nil if successful, error otherwise
 func (c *Client) TestConnection() error {
-	resp, err := c.doRequest("GET", "/api/json", nil)
+	resp, err := c.doRequest(http.MethodGet, "/api/json", nil, nil)
 	if err != nil {
 		// Check for common network errors
 		if err, ok := err.(interface{ Timeout() bool }); ok && err.Timeout() {
@@ -86,7 +170,7 @@ func (c *Client) TestConnection() error {
 
 // GetInfo gets basic Jenkins information
 func (c *Client) GetInfo() (map[string]interface{}, error) {
-	resp, err := c.doRequest("GET", "/api/json", nil)
+	resp, err := c.doRequest(http.MethodGet, "/api/json", nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +195,7 @@ func (c *Client) GetAllJobs() ([]Job, error) {
 	// This fetches job name, fullName, url, color, lastBuild details, and nested jobs
 	path := "/api/json?tree=jobs[name,fullName,url,color,_class,lastBuild[number,result,duration,timestamp,building,url],jobs[name,fullName,url,color,_class,lastBuild[number,result,duration,timestamp,building,url],jobs[name,fullName,url,color,_class,lastBuild[number,result,duration,timestamp,building,url]]]]"
 
-	resp, err := c.doRequest("GET", path, nil)
+	resp, err := c.doRequest(http.MethodGet, path, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch jobs: %w", err)
 	}
@@ -136,7 +220,7 @@ func (c *Client) GetBuildQueue() ([]QueueItem, error) {
 	// Fetch queue with tree parameter to get all necessary fields
 	path := "/queue/api/json?tree=items[id,blocked,buildable,stuck,why,inQueueSince,task[name,url,color],executable[number,url]]"
 
-	resp, err := c.doRequest("GET", path, nil)
+	resp, err := c.doRequest(http.MethodGet, path, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch build queue: %w", err)
 	}
@@ -161,7 +245,7 @@ func (c *Client) GetRunningBuilds() ([]RunningBuild, error) {
 	// Fetch computer information with executor details
 	path := "/computer/api/json?tree=computer[displayName,executors[idle,currentExecutable[fullDisplayName,number,url,timestamp]]]"
 
-	resp, err := c.doRequest("GET", path, nil)
+	resp, err := c.doRequest(http.MethodGet, path, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch running builds: %w", err)
 	}
@@ -228,7 +312,7 @@ func (c *Client) GetJobDetails(fullName string, limit int) (*JobDetails, error) 
 
 	path := fmt.Sprintf("%s/api/json?%s", jobPath, params.Encode())
 
-	resp, err := c.doRequest("GET", path, nil)
+	resp, err := c.doRequest(http.MethodGet, path, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch job details: %w", err)
 	}
@@ -249,6 +333,132 @@ func (c *Client) GetJobDetails(fullName string, limit int) (*JobDetails, error) 
 	}
 
 	return &details, nil
+}
+
+// TriggerBuild requests a new build for the specified job.
+func (c *Client) TriggerBuild(fullName string) error {
+	if fullName == "" {
+		return fmt.Errorf("job name must not be empty")
+	}
+
+	jobPath := buildJobAPIPath(fullName)
+	if jobPath == "" {
+		return fmt.Errorf("invalid job path for %q", fullName)
+	}
+
+	path := fmt.Sprintf("%s/build?delay=0sec", jobPath)
+	resp, err := c.doRequest(http.MethodPost, path, nil, map[string]string{
+		"Content-Type": "application/x-www-form-urlencoded",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to trigger build: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusCreated, http.StatusAccepted:
+		return nil
+	default:
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to trigger build: status %d, body: %s", resp.StatusCode, string(body))
+	}
+}
+
+// AbortBuild sends a stop signal to a running build.
+func (c *Client) AbortBuild(fullName string, buildNumber int) error {
+	if fullName == "" {
+		return fmt.Errorf("job name must not be empty")
+	}
+	if buildNumber <= 0 {
+		return fmt.Errorf("build number must be greater than zero")
+	}
+
+	jobPath := buildJobAPIPath(fullName)
+	if jobPath == "" {
+		return fmt.Errorf("invalid job path for %q", fullName)
+	}
+
+	path := fmt.Sprintf("%s/%d/stop", jobPath, buildNumber)
+	resp, err := c.doRequest(http.MethodPost, path, nil, nil)
+	if err != nil {
+		return fmt.Errorf("failed to abort build: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusCreated, http.StatusAccepted, http.StatusFound:
+		return nil
+	default:
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to abort build: status %d, body: %s", resp.StatusCode, string(body))
+	}
+}
+
+// GetConsoleLog fetches the full console output for a specific build.
+func (c *Client) GetConsoleLog(fullName string, buildNumber int) (string, error) {
+	if fullName == "" {
+		return "", fmt.Errorf("job name must not be empty")
+	}
+	if buildNumber <= 0 {
+		return "", fmt.Errorf("build number must be greater than zero")
+	}
+
+	jobPath := buildJobAPIPath(fullName)
+	if jobPath == "" {
+		return "", fmt.Errorf("invalid job path for %q", fullName)
+	}
+
+	path := fmt.Sprintf("%s/%d/consoleText", jobPath, buildNumber)
+	resp, err := c.doRequest(http.MethodGet, path, nil, map[string]string{
+		"Accept": "text/plain",
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch console log: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to fetch console log: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read console log: %w", err)
+	}
+	return string(data), nil
+}
+
+// GetJobConfig retrieves the raw job configuration (XML).
+func (c *Client) GetJobConfig(fullName string) (string, error) {
+	if fullName == "" {
+		return "", fmt.Errorf("job name must not be empty")
+	}
+
+	jobPath := buildJobAPIPath(fullName)
+	if jobPath == "" {
+		return "", fmt.Errorf("invalid job path for %q", fullName)
+	}
+
+	path := fmt.Sprintf("%s/config.xml", jobPath)
+	resp, err := c.doRequest(http.MethodGet, path, nil, map[string]string{
+		"Accept": "application/xml",
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch job config: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to fetch job config: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read job config: %w", err)
+	}
+	return string(data), nil
 }
 
 // buildJobAPIPath converts a Jenkins job full name (with / separators) into the /job/... API path.
