@@ -65,3 +65,5 @@ dist/
 build/
 .claude/settings.local.json
 .gocache
+.cache
+.gomodcache
