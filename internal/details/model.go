@@ -39,6 +39,9 @@ type confirmationState struct {
 	prompt string
 }
 
+// RefreshRequestedMsg asks the details panel to refresh the active job view.
+type RefreshRequestedMsg struct{}
+
 // Model represents the job details panel.
 type Model struct {
 	client *jenkins.Client
@@ -162,6 +165,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if m.selectedJob != nil && (msg.JobFullName == "" || msg.JobFullName == m.selectedJob.FullName) {
 			if cancelCmd := m.setFeedback("Parameter entry cancelled", false); cancelCmd != nil {
 				cmds = append(cmds, cancelCmd)
+			}
+		}
+
+	case RefreshRequestedMsg:
+		if m.selectedJob != nil {
+			var refreshCmd tea.Cmd
+			m, refreshCmd = m.startRefreshAction()
+			if refreshCmd != nil {
+				cmds = append(cmds, refreshCmd)
 			}
 		}
 

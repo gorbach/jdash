@@ -23,6 +23,9 @@ type JobSelectedMsg struct {
 // JobSelectionClearedMsg indicates that no job is currently selected.
 type JobSelectionClearedMsg struct{}
 
+// RefreshRequestedMsg asks the jobs panel to refetch jobs from Jenkins.
+type RefreshRequestedMsg struct{}
+
 // fetchJobsCmd creates a command to fetch all jobs from Jenkins
 func fetchJobsCmd(client *jenkins.Client) tea.Cmd {
 	return func() tea.Msg {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/gorbach/jenkins-gotui/internal/console"
@@ -42,6 +43,44 @@ var (
 	dimContentStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 )
 
+const (
+	helpViewportMinWidth  = 30
+	helpViewportMaxWidth  = 60
+	helpViewportMinHeight = 12
+)
+
+const helpContent = `Key Bindings
+
+Global
+  q        quit application
+  r        refresh all data
+  ?        toggle this help
+  Tab      next panel
+  1-3      jump to panel
+
+Jobs List (Panel 1)
+  Up/k     move up
+  Down/j   move down
+  Left/h   collapse node
+  Right/l  expand node
+  Space    toggle expand
+  Enter    view details
+  g/G      top/bottom
+  /        search
+  b        build now
+
+Build Info (Panel 3)
+  b        build now / configure
+  l        view logs
+  p        parameters (if available)
+  c        view config
+  r        refresh details
+  H        build history
+  a        abort running build
+
+[Press ? or Esc to close]
+`
+
 type consoleTargetResolvedMsg struct {
 	JobFullName string
 	BuildNumber int
@@ -61,6 +100,8 @@ type Model struct {
 	height       int
 	serverURL    string
 	client       *jenkins.Client
+	helpVisible  bool
+	helpViewport viewport.Model
 	modal        tea.Model
 	modalKind    modalType
 	bottomView   bottomView
@@ -73,6 +114,9 @@ type Model struct {
 
 // New creates a new application model
 func New(serverURL string, client *jenkins.Client) Model {
+	helpVP := viewport.New(0, 0)
+	helpVP.SetContent(helpContent)
+
 	return Model{
 		activePanel:  PanelJobs,
 		bottomView:   bottomViewDetails,
@@ -81,6 +125,7 @@ func New(serverURL string, client *jenkins.Client) Model {
 		detailsPanel: details.New(client),
 		consolePanel: console.New(client),
 		statusBar:    statusbar.New(serverURL),
+		helpViewport: helpVP,
 		serverURL:    serverURL,
 		client:       client,
 	}
@@ -94,6 +139,7 @@ func (m Model) Init() tea.Cmd {
 		m.detailsPanel.Init(),
 		m.consolePanel.Init(),
 		m.statusBar.Init(),
+		m.helpViewport.Init(),
 	)
 }
 
@@ -121,9 +167,48 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case tea.MouseMsg:
+		if m.helpVisible {
+			var helpCmd tea.Cmd
+			m.helpViewport, helpCmd = m.helpViewport.Update(msg)
+			if helpCmd != nil {
+				cmds = append(cmds, helpCmd)
+			}
+			return m, tea.Batch(cmds...)
+		}
+
 	case tea.KeyMsg:
+		key := msg.String()
+
+		// Avoid forwarding commands while help overlay is active.
+		if key == "?" {
+			if m.helpVisible {
+				m.helpVisible = false
+			} else {
+				m.helpVisible = true
+				m.helpViewport.GotoTop()
+			}
+			return m, nil
+		}
+
+		if m.helpVisible {
+			switch key {
+			case "esc":
+				m.helpVisible = false
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			default:
+				var helpCmd tea.Cmd
+				m.helpViewport, helpCmd = m.helpViewport.Update(msg)
+				if helpCmd != nil {
+					cmds = append(cmds, helpCmd)
+				}
+			}
+			return m, tea.Batch(cmds...)
+		}
+
 		if m.modalActive() {
-			if msg.String() == "ctrl+c" || msg.String() == "q" {
+			if key == "ctrl+c" || key == "q" {
 				return m, tea.Quit
 			}
 			var modalCmd tea.Cmd
@@ -201,6 +286,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) handleWindowResize(msg tea.WindowSizeMsg) (Model, tea.Cmd) {
 	m.width = msg.Width
 	m.height = msg.Height
+	m = m.updateHelpViewportSize()
 
 	// Calculate dimensions once
 	dims := m.calculatePanelDimensions()
@@ -294,12 +380,44 @@ func (m Model) handleGlobalKeys(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 		m.activePanel = PanelBottom
 		return true, m, nil
 
-	case "?":
-		// TODO: Show help overlay
-		return true, m, nil
+	case "r":
+		refreshModel, refreshCmd := m.startGlobalRefresh()
+		return true, refreshModel, refreshCmd
 	}
 
 	return false, m, nil // Not handled, continue routing
+}
+
+func (m Model) startGlobalRefresh() (Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	var cmd tea.Cmd
+	m.statusBar, cmd = m.statusBar.Update(statusbar.RefreshStartedMsg{})
+	if cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+
+	m.jobsPanel, cmd = m.jobsPanel.Update(jobs.RefreshRequestedMsg{})
+	if cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+
+	m.queuePanel, cmd = m.queuePanel.Update(queue.RefreshRequestedMsg{})
+	if cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+
+	switch m.bottomView {
+	case bottomViewConsole:
+		m.consolePanel, cmd = m.consolePanel.Update(console.RefreshRequestedMsg{})
+	default:
+		m.detailsPanel, cmd = m.detailsPanel.Update(details.RefreshRequestedMsg{})
+	}
+	if cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+
+	return m, tea.Batch(cmds...)
 }
 
 // routeKeyToActivePanel forwards keyboard input to the currently focused panel
@@ -352,6 +470,21 @@ func (m Model) broadcastToAllPanels(msg tea.Msg) (Model, tea.Cmd) {
 	m.statusBar, cmd = m.statusBar.Update(msg)
 	cmds = append(cmds, cmd)
 
+	switch t := msg.(type) {
+	case jobs.JobsFetchedMsg:
+		m.statusBar, cmd = m.statusBar.Update(statusbar.RefreshFinishedMsg{
+			JobCount: len(t.Jobs),
+		})
+		cmds = append(cmds, cmd)
+
+	case jobs.JobsErrorMsg:
+		m.statusBar, cmd = m.statusBar.Update(statusbar.RefreshFinishedMsg{
+			JobCount: -1,
+			Err:      t.Err,
+		})
+		cmds = append(cmds, cmd)
+	}
+
 	return m, tea.Batch(cmds...)
 }
 
@@ -385,6 +518,10 @@ func (m Model) View() string {
 		bottomPanel,
 		statusBarView,
 	)
+
+	if m.helpVisible {
+		return m.renderHelpOverlay(baseContent)
+	}
 
 	if !m.modalActive() {
 		return baseContent
@@ -474,6 +611,45 @@ func (m Model) handleParameterSubmit(msg parameters.SubmittedMsg) (Model, tea.Cm
 func (m Model) handleParameterCancel(msg parameters.CancelledMsg) (Model, tea.Cmd) {
 	m = m.clearModal()
 	return m.broadcastToAllPanels(details.ParameterCancelledMsg{JobFullName: msg.JobFullName})
+}
+
+func (m Model) renderHelpOverlay(baseContent string) string {
+	if m.width <= 0 || m.height <= 0 {
+		return baseContent
+	}
+
+	dimmed := dimContentStyle.Render(baseContent)
+	baseView := lipgloss.NewStyle().
+		Width(m.width).
+		Height(m.height).
+		Render(dimmed)
+
+	helpView := m.helpBoxView()
+	if helpView == "" {
+		return baseView
+	}
+
+	helpView = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, helpView)
+	return overlayStrings(baseView, helpView)
+}
+
+func (m Model) helpBoxView() string {
+	if m.helpViewport.Width <= 0 || m.helpViewport.Height <= 0 {
+		return ""
+	}
+
+	body := lipgloss.NewStyle().
+		Width(m.helpViewport.Width).
+		Padding(1, 2).
+		Render(m.helpViewport.View())
+
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("12")).
+		Background(lipgloss.Color("235")).
+		Width(m.helpViewport.Width + 4)
+
+	return boxStyle.Render(body)
 }
 
 func (m Model) openParametersModal(req details.ActionRequestMsg) (Model, tea.Cmd) {
@@ -578,6 +754,34 @@ func (m Model) clearModal() Model {
 	return m
 }
 
+func (m Model) updateHelpViewportSize() Model {
+	if m.width <= 0 || m.height <= 0 {
+		return m
+	}
+
+	availableWidth := maxInt(m.width-4, 1)
+	minWidth := minInt(helpViewportMinWidth, availableWidth)
+	maxWidth := minInt(helpViewportMaxWidth, availableWidth)
+	candidateWidth := m.width - 10
+	width := clampInt(candidateWidth, minWidth, maxWidth)
+	if width < 1 {
+		width = 1
+	}
+
+	availableHeight := maxInt(m.height-4, 3)
+	minHeight := minInt(helpViewportMinHeight, availableHeight)
+	candidateHeight := m.height - 6
+	height := clampInt(candidateHeight, minHeight, availableHeight)
+	if height < 3 {
+		height = 3
+	}
+
+	m.helpViewport.Width = width
+	m.helpViewport.Height = height
+
+	return m
+}
+
 func cloneParameterValues(src map[string]string) map[string]string {
 	if src == nil {
 		return nil
@@ -590,6 +794,33 @@ func cloneParameterValues(src map[string]string) map[string]string {
 		dst[k] = v
 	}
 	return dst
+}
+
+func clampInt(v, min, max int) int {
+	if max < min {
+		max = min
+	}
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func overlayStrings(base, overlay string) string {

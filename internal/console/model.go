@@ -51,6 +51,9 @@ type logsChunkMsg struct {
 	err        error
 }
 
+// RefreshRequestedMsg asks the console view to fetch the latest logs.
+type RefreshRequestedMsg struct{}
+
 // Model implements a viewport-based console log viewer with live streaming, search, and auto-scroll.
 type Model struct {
 	client *jenkins.Client
@@ -133,6 +136,17 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case DeactivateMsg:
 		m = m.handleDeactivate()
+
+	case RefreshRequestedMsg:
+		if m.hasTarget {
+			m.err = nil
+			m.statusMessage = "Refreshing logs..."
+			var fetchCmd tea.Cmd
+			m, fetchCmd = m.startFetch()
+			if fetchCmd != nil {
+				cmds = append(cmds, fetchCmd)
+			}
+		}
 
 	case pollLogsMsg:
 		if msg.session == m.session && m.shouldPoll && !m.fetchInFlight {
@@ -320,6 +334,11 @@ func (m Model) handleSearchKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.searchInput, cmd = m.searchInput.Update(msg)
 	return m, cmd
+}
+
+// SearchActive reports whether the console search interface is active.
+func (m Model) SearchActive() bool {
+	return m.searchActive
 }
 
 func (m Model) handleOpenRequest(msg OpenRequestMsg) (Model, tea.Cmd) {

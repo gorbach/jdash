@@ -127,6 +127,16 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.applySearch(msg.Query)
 		return finalizeJobsModel(m, cmds)
 
+	case RefreshRequestedMsg:
+		if m.client == nil {
+			return finalizeJobsModel(m, cmds)
+		}
+		m.loading = true
+		m.err = nil
+		cmds = append(cmds, m.spinner.Tick)
+		cmds = append(cmds, fetchJobsCmd(m.client))
+		return finalizeJobsModel(m, cmds)
+
 	case tea.KeyMsg:
 		var cmd tea.Cmd
 		m, cmd = m.handleKeyMsg(msg)
@@ -417,6 +427,11 @@ func (m *Model) currentSelectionFullName() string {
 }
 
 func (m *Model) shouldShowSearchBar() bool {
+	return m.searchMode
+}
+
+// InSearchMode reports whether the jobs list is currently in search mode.
+func (m Model) InSearchMode() bool {
 	return m.searchMode
 }
 

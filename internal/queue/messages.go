@@ -14,7 +14,7 @@ type pollQueueMsg struct{}
 
 // queueUpdateMsg contains the fetched queue data
 type queueUpdateMsg struct {
-	queuedItems  []jenkins.QueueItem
+	queuedItems   []jenkins.QueueItem
 	runningBuilds []jenkins.RunningBuild
 }
 
@@ -22,3 +22,6 @@ type queueUpdateMsg struct {
 type queueErrorMsg struct {
 	err error
 }
+
+// RefreshRequestedMsg asks the queue panel to poll Jenkins immediately.
+type RefreshRequestedMsg struct{}

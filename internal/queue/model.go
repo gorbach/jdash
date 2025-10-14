@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/spinner"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/gorbach/jenkins-gotui/internal/jenkins"
 	"github.com/gorbach/jenkins-gotui/internal/ui"
@@ -14,15 +14,15 @@ import (
 
 // Model represents the build queue panel
 type Model struct {
-	width          int
-	height         int
-	queuedItems    []jenkins.QueueItem
-	runningBuilds  []jenkins.RunningBuild
-	spinner        spinner.Model
-	client         *jenkins.Client
-	polling        bool
-	lastPoll       time.Time
-	err            error
+	width         int
+	height        int
+	queuedItems   []jenkins.QueueItem
+	runningBuilds []jenkins.RunningBuild
+	spinner       spinner.Model
+	client        *jenkins.Client
+	polling       bool
+	lastPoll      time.Time
+	err           error
 }
 
 // New creates a new queue panel model
@@ -69,6 +69,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case pollQueueMsg:
 		// Trigger a queue poll
+		return m, m.pollQueueCmd()
+
+	case RefreshRequestedMsg:
 		return m, m.pollQueueCmd()
 
 	case queueUpdateMsg:
