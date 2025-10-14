@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -482,6 +483,172 @@ func (c *Client) GetConsoleLog(fullName string, buildNumber int) (string, error)
 		return "", fmt.Errorf("failed to read console log: %w", err)
 	}
 	return string(data), nil
+}
+
+// GetProgressiveLog fetches a chunk of console output using Jenkins' progressive log API.
+// It returns the new content, the next offset to request, and whether more data is available.
+// The lookup prefers the provided buildURL (if not empty) and falls back to job full name + build number.
+func (c *Client) GetProgressiveLog(buildURL, fullName string, buildNumber int, start int64) (string, int64, bool, error) {
+	if start < 0 {
+		start = 0
+	}
+
+	logPath, err := c.progressiveLogPath(buildURL, fullName, buildNumber, start)
+	if err != nil {
+		return "", 0, false, err
+	}
+
+	resp, err := c.doRequest(http.MethodGet, logPath, nil, map[string]string{
+		"Accept": "text/plain",
+	})
+	if err != nil {
+		return "", 0, false, fmt.Errorf("failed to fetch progressive console log: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", 0, false, fmt.Errorf("failed to fetch progressive console log: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", 0, false, fmt.Errorf("failed to read progressive console log: %w", err)
+	}
+
+	nextOffset := start + int64(len(data))
+	if sizeHeader := resp.Header.Get("X-Text-Size"); sizeHeader != "" {
+		if parsed, parseErr := strconv.ParseInt(sizeHeader, 10, 64); parseErr == nil && parsed >= 0 {
+			nextOffset = parsed
+		}
+	}
+
+	more := false
+	if strings.EqualFold(resp.Header.Get("X-More-Data"), "true") {
+		more = true
+	}
+
+	return string(data), nextOffset, more, nil
+}
+
+func (c *Client) progressiveLogPath(buildURL, fullName string, buildNumber int, start int64) (string, error) {
+	buildPath, err := c.resolveBuildPath(buildURL, fullName, buildNumber)
+	if err != nil {
+		return "", err
+	}
+	buildPath = strings.TrimSuffix(buildPath, "/")
+	if buildPath == "" {
+		return "", fmt.Errorf("resolved build path is empty")
+	}
+	return fmt.Sprintf("%s/logText/progressiveText?start=%d", buildPath, start), nil
+}
+
+func (c *Client) resolveBuildPath(buildURL, fullName string, buildNumber int) (string, error) {
+	if trimmed := strings.TrimSpace(buildURL); trimmed != "" {
+		if path, err := c.relativeBuildPath(trimmed); err == nil {
+			return strings.TrimSuffix(path, "/"), nil
+		}
+	}
+
+	if fullName == "" {
+		return "", fmt.Errorf("job name must not be empty")
+	}
+	if buildNumber <= 0 {
+		return "", fmt.Errorf("build number must be greater than zero")
+	}
+
+	jobPath := buildJobAPIPath(fullName)
+	if jobPath == "" {
+		return "", fmt.Errorf("invalid job path for %q", fullName)
+	}
+
+	return fmt.Sprintf("%s/%d", strings.TrimSuffix(jobPath, "/"), buildNumber), nil
+}
+
+func (c *Client) relativeBuildPath(buildURL string) (string, error) {
+	trimmed := strings.TrimSpace(buildURL)
+	if trimmed == "" {
+		return "", fmt.Errorf("build URL must not be empty")
+	}
+
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("invalid build URL %q: %w", trimmed, err)
+	}
+
+	// If the URL was already relative, parsed.Scheme and parsed.Host will be empty.
+	if parsed.Scheme == "" && parsed.Host == "" {
+		path := parsed.Path
+		if path == "" {
+			return "", fmt.Errorf("build URL %q does not contain a path", trimmed)
+		}
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		return path, nil
+	}
+
+	baseURL, err := url.Parse(c.BaseURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid Jenkins base URL %q: %w", c.BaseURL, err)
+	}
+
+	relPath := parsed.Path
+	if relPath == "" {
+		return "", fmt.Errorf("build URL %q does not contain a path", trimmed)
+	}
+
+	basePath := strings.TrimSuffix(baseURL.Path, "/")
+	if basePath != "" && strings.HasPrefix(relPath, basePath) {
+		relPath = strings.TrimPrefix(relPath, basePath)
+	}
+
+	if relPath == "" {
+		return "", fmt.Errorf("build URL %q does not contain a path", trimmed)
+	}
+
+	if !strings.HasPrefix(relPath, "/") {
+		relPath = "/" + relPath
+	}
+
+	return relPath, nil
+}
+
+// GetBuild fetches build details for the given job. When number <= 0 it returns the last (possibly running) build.
+func (c *Client) GetBuild(fullName string, number int) (*Build, error) {
+	if fullName == "" {
+		return nil, fmt.Errorf("job name must not be empty")
+	}
+
+	jobPath := buildJobAPIPath(fullName)
+	if jobPath == "" {
+		return nil, fmt.Errorf("invalid job path for %q", fullName)
+	}
+
+	var path string
+	if number <= 0 {
+		path = fmt.Sprintf("%s/lastBuild/api/json", jobPath)
+	} else {
+		path = fmt.Sprintf("%s/%d/api/json", jobPath, number)
+	}
+
+	resp, err := c.doRequest(http.MethodGet, path, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch build details: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to fetch build details: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var build Build
+	if err := json.NewDecoder(resp.Body).Decode(&build); err != nil {
+		return nil, fmt.Errorf("failed to decode build details: %w", err)
+	}
+
+	return &build, nil
 }
 
 // GetJobConfig retrieves the raw job configuration (XML).

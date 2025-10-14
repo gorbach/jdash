@@ -1,10 +1,12 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/gorbach/jenkins-gotui/internal/console"
 	"github.com/gorbach/jenkins-gotui/internal/details"
 	"github.com/gorbach/jenkins-gotui/internal/jenkins"
 	"github.com/gorbach/jenkins-gotui/internal/jobs"
@@ -19,7 +21,7 @@ type PanelID int
 const (
 	PanelJobs PanelID = iota
 	PanelQueue
-	PanelDetails
+	PanelBottom
 )
 
 type modalType int
@@ -29,9 +31,23 @@ const (
 	modalParameters
 )
 
+type bottomView int
+
+const (
+	bottomViewDetails bottomView = iota
+	bottomViewConsole
+)
+
 var (
 	dimContentStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 )
+
+type consoleTargetResolvedMsg struct {
+	JobFullName string
+	BuildNumber int
+	BuildURL    string
+	Err         error
+}
 
 // Model is the root application model
 type Model struct {
@@ -39,6 +55,7 @@ type Model struct {
 	jobsPanel    jobs.Model
 	queuePanel   queue.Model
 	detailsPanel details.Model
+	consolePanel console.Model
 	statusBar    statusbar.Model
 	width        int
 	height       int
@@ -46,15 +63,23 @@ type Model struct {
 	client       *jenkins.Client
 	modal        tea.Model
 	modalKind    modalType
+	bottomView   bottomView
+	// console target tracking for async build resolution
+	consoleTargetFullName string
+	consoleTargetJobName  string
+	consoleTargetBuildURL string
+	consoleTargetNumber   int
 }
 
 // New creates a new application model
 func New(serverURL string, client *jenkins.Client) Model {
 	return Model{
 		activePanel:  PanelJobs,
+		bottomView:   bottomViewDetails,
 		jobsPanel:    jobs.New(client),
 		queuePanel:   queue.New(client),
 		detailsPanel: details.New(client),
+		consolePanel: console.New(client),
 		statusBar:    statusbar.New(serverURL),
 		serverURL:    serverURL,
 		client:       client,
@@ -67,6 +92,7 @@ func (m Model) Init() tea.Cmd {
 		m.jobsPanel.Init(),
 		m.queuePanel.Init(),
 		m.detailsPanel.Init(),
+		m.consolePanel.Init(),
 		m.statusBar.Init(),
 	)
 }
@@ -136,6 +162,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 		return m, tea.Batch(cmds...)
+
+	case console.ExitRequestedMsg:
+		var cmd tea.Cmd
+		m, cmd = m.handleConsoleExit()
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
+
+	case consoleTargetResolvedMsg:
+		var cmd tea.Cmd
+		m, cmd = m.handleConsoleTargetResolved(msg)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return m, tea.Batch(cmds...)
 	}
 
 	if m.modalActive() {
@@ -180,8 +222,14 @@ func (m Model) handleWindowResize(msg tea.WindowSizeMsg) (Model, tea.Cmd) {
 	cmds = append(cmds, cmd)
 
 	m.detailsPanel, cmd = m.detailsPanel.Update(tea.WindowSizeMsg{
-		Width:  dims.detailsWidth,
-		Height: dims.detailsHeight,
+		Width:  dims.bottomWidth,
+		Height: dims.bottomHeight,
+	})
+	cmds = append(cmds, cmd)
+
+	m.consolePanel, cmd = m.consolePanel.Update(tea.WindowSizeMsg{
+		Width:  dims.bottomWidth,
+		Height: dims.bottomHeight,
 	})
 	cmds = append(cmds, cmd)
 
@@ -195,9 +243,9 @@ func (m Model) handleWindowResize(msg tea.WindowSizeMsg) (Model, tea.Cmd) {
 
 // panelDimensions holds calculated dimensions for all panels
 type panelDimensions struct {
-	jobsWidth, jobsHeight       int
-	queueWidth, queueHeight     int
-	detailsWidth, detailsHeight int
+	jobsWidth, jobsHeight     int
+	queueWidth, queueHeight   int
+	bottomWidth, bottomHeight int
 }
 
 // calculatePanelDimensions computes dimensions for all panels based on terminal size
@@ -210,12 +258,12 @@ func (m Model) calculatePanelDimensions() panelDimensions {
 
 	// Account for borders (2px per side) and padding
 	return panelDimensions{
-		jobsWidth:     leftPanelWidth - 4,
-		jobsHeight:    topPanelHeight - 4,
-		queueWidth:    rightPanelWidth - 4,
-		queueHeight:   topPanelHeight - 4,
-		detailsWidth:  m.width - 4,
-		detailsHeight: bottomPanelHeight - 4,
+		jobsWidth:    leftPanelWidth - 4,
+		jobsHeight:   topPanelHeight - 4,
+		queueWidth:   rightPanelWidth - 4,
+		queueHeight:  topPanelHeight - 4,
+		bottomWidth:  m.width - 4,
+		bottomHeight: bottomPanelHeight - 4,
 	}
 }
 
@@ -243,7 +291,7 @@ func (m Model) handleGlobalKeys(msg tea.KeyMsg) (bool, Model, tea.Cmd) {
 		return true, m, nil
 
 	case "3":
-		m.activePanel = PanelDetails
+		m.activePanel = PanelBottom
 		return true, m, nil
 
 	case "?":
@@ -263,11 +311,24 @@ func (m Model) routeKeyToActivePanel(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.jobsPanel, cmd = m.jobsPanel.Update(msg)
 	case PanelQueue:
 		m.queuePanel, cmd = m.queuePanel.Update(msg)
-	case PanelDetails:
-		m.detailsPanel, cmd = m.detailsPanel.Update(msg)
+	case PanelBottom:
+		return m.updateBottomPanel(msg)
 	}
 
 	return m, cmd
+}
+
+func (m Model) updateBottomPanel(msg tea.Msg) (Model, tea.Cmd) {
+	switch m.bottomView {
+	case bottomViewConsole:
+		var cmd tea.Cmd
+		m.consolePanel, cmd = m.consolePanel.Update(msg)
+		return m, cmd
+	default:
+		var cmd tea.Cmd
+		m.detailsPanel, cmd = m.detailsPanel.Update(msg)
+		return m, cmd
+	}
 }
 
 // broadcastToAllPanels sends messages that all panels need (custom messages, spinner ticks, etc.)
@@ -283,6 +344,9 @@ func (m Model) broadcastToAllPanels(msg tea.Msg) (Model, tea.Cmd) {
 	cmds = append(cmds, cmd)
 
 	m.detailsPanel, cmd = m.detailsPanel.Update(msg)
+	cmds = append(cmds, cmd)
+
+	m.consolePanel, cmd = m.consolePanel.Update(msg)
 	cmds = append(cmds, cmd)
 
 	m.statusBar, cmd = m.statusBar.Update(msg)
@@ -309,8 +373,8 @@ func (m Model) View() string {
 	queuePanel := m.renderPanel(PanelQueue, m.queuePanel.View(), rightPanelWidth, topPanelHeight)
 	topPanels := lipgloss.JoinHorizontal(lipgloss.Top, jobsPanel, queuePanel)
 
-	// Render bottom panel (details)
-	bottomPanel := m.renderPanel(PanelDetails, m.detailsPanel.View(), m.width, bottomPanelHeight)
+	// Render bottom panel (details or console)
+	bottomPanel := m.renderPanel(PanelBottom, m.bottomPanelView(), m.width, bottomPanelHeight)
 
 	// Render status bar
 	statusBarView := m.statusBar.View()
@@ -347,6 +411,15 @@ func (m Model) View() string {
 	return overlayStrings(baseView, modalView)
 }
 
+func (m Model) bottomPanelView() string {
+	switch m.bottomView {
+	case bottomViewConsole:
+		return m.consolePanel.View()
+	default:
+		return m.detailsPanel.View()
+	}
+}
+
 // renderPanel renders a panel with borders and focus highlighting
 func (m Model) renderPanel(id PanelID, content string, width, height int) string {
 	borderColor := lipgloss.Color("8") // Dim gray
@@ -381,6 +454,8 @@ func (m Model) handleActionRequest(msg details.ActionRequestMsg) (Model, tea.Cmd
 	switch msg.Kind {
 	case details.ActionKindViewParameters:
 		return m.openParametersModal(msg)
+	case details.ActionKindViewLogs:
+		return m.openConsoleView(msg)
 	default:
 		return m.broadcastToAllPanels(msg)
 	}
@@ -422,6 +497,76 @@ func (m Model) openParametersModal(req details.ActionRequestMsg) (Model, tea.Cmd
 		if sizeCmd != nil {
 			cmds = append(cmds, sizeCmd)
 		}
+	}
+
+	return m, tea.Batch(cmds...)
+}
+
+func (m Model) openConsoleView(req details.ActionRequestMsg) (Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	if m.bottomView != bottomViewConsole {
+		m.bottomView = bottomViewConsole
+	}
+
+	jobName := req.Job.Name
+	if jobName == "" {
+		jobName = req.Job.FullName
+	}
+	m.consoleTargetJobName = jobName
+	m.consoleTargetFullName = req.Job.FullName
+
+	buildNumber := 0
+	if req.Build != nil && req.Build.Number > 0 {
+		buildNumber = req.Build.Number
+	} else if req.Job.LastBuild != nil && req.Job.LastBuild.Number > 0 {
+		buildNumber = req.Job.LastBuild.Number
+	}
+
+	buildURL := ""
+	if req.Build != nil && req.Build.URL != "" {
+		buildURL = req.Build.URL
+	} else if req.Job.LastBuild != nil && req.Job.LastBuild.URL != "" {
+		buildURL = req.Job.LastBuild.URL
+	}
+
+	if buildURL == "" && req.Job.URL != "" && buildNumber > 0 {
+		trimmed := strings.TrimSuffix(req.Job.URL, "/")
+		buildURL = fmt.Sprintf("%s/%d/", trimmed, buildNumber)
+	}
+
+	m.consoleTargetNumber = buildNumber
+	m.consoleTargetBuildURL = buildURL
+
+	openMsg := console.OpenRequestMsg{
+		JobName:     jobName,
+		JobFullName: req.Job.FullName,
+		BuildNumber: buildNumber,
+		BuildURL:    buildURL,
+	}
+
+	var consoleCmd tea.Cmd
+	m.consolePanel, consoleCmd = m.consolePanel.Update(openMsg)
+	if consoleCmd != nil {
+		cmds = append(cmds, consoleCmd)
+	}
+
+	if m.width > 0 && m.height > 0 {
+		dims := m.calculatePanelDimensions()
+		sizeMsg := tea.WindowSizeMsg{
+			Width:  dims.bottomWidth,
+			Height: dims.bottomHeight,
+		}
+		var sizeCmd tea.Cmd
+		m.consolePanel, sizeCmd = m.consolePanel.Update(sizeMsg)
+		if sizeCmd != nil {
+			cmds = append(cmds, sizeCmd)
+		}
+	}
+
+	m.activePanel = PanelBottom
+	if resolveCmd := resolveConsoleTargetCmd(m.client, req.Job.FullName); resolveCmd != nil {
+		cmds = append(cmds, resolveCmd)
 	}
 
 	return m, tea.Batch(cmds...)
@@ -495,4 +640,94 @@ func overlayStrings(base, overlay string) string {
 		}
 	}
 	return builder.String()
+}
+
+func (m Model) showDetailsPanel() (Model, tea.Cmd) {
+	if m.bottomView == bottomViewDetails {
+		return m, nil
+	}
+
+	var cmds []tea.Cmd
+	var consoleCmd tea.Cmd
+	m.consolePanel, consoleCmd = m.consolePanel.Update(console.DeactivateMsg{})
+	if consoleCmd != nil {
+		cmds = append(cmds, consoleCmd)
+	}
+
+	m.bottomView = bottomViewDetails
+	return m, tea.Batch(cmds...)
+}
+
+func (m Model) handleConsoleExit() (Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m, cmd = m.showDetailsPanel()
+	m.activePanel = PanelBottom
+	return m, cmd
+}
+
+func (m Model) handleConsoleTargetResolved(msg consoleTargetResolvedMsg) (Model, tea.Cmd) {
+	if msg.JobFullName == "" {
+		return m, nil
+	}
+	if msg.Err != nil {
+		return m, nil
+	}
+	if msg.JobFullName != m.consoleTargetFullName {
+		return m, nil
+	}
+
+	number := msg.BuildNumber
+	url := strings.TrimSpace(msg.BuildURL)
+
+	if number <= 0 && url == "" {
+		return m, nil
+	}
+
+	if number <= 0 {
+		number = m.consoleTargetNumber
+	}
+	if url == "" {
+		url = m.consoleTargetBuildURL
+	}
+
+	if number == m.consoleTargetNumber && url == m.consoleTargetBuildURL {
+		return m, nil
+	}
+
+	m.consoleTargetNumber = number
+	m.consoleTargetBuildURL = url
+
+	openMsg := console.OpenRequestMsg{
+		JobName:     m.consoleTargetJobName,
+		JobFullName: msg.JobFullName,
+		BuildNumber: number,
+		BuildURL:    url,
+	}
+
+	var cmd tea.Cmd
+	m.consolePanel, cmd = m.consolePanel.Update(openMsg)
+	return m, cmd
+}
+
+func resolveConsoleTargetCmd(client *jenkins.Client, jobFullName string) tea.Cmd {
+	if client == nil || jobFullName == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		build, err := client.GetBuild(jobFullName, -1)
+		if err != nil {
+			return consoleTargetResolvedMsg{
+				JobFullName: jobFullName,
+				Err:         err,
+			}
+		}
+		msg := consoleTargetResolvedMsg{
+			JobFullName: jobFullName,
+		}
+		if build != nil {
+			msg.BuildNumber = build.Number
+			msg.BuildURL = build.URL
+		}
+		return msg
+	}
 }
