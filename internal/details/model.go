@@ -23,7 +23,7 @@ type jobDetailsResultMsg struct {
 }
 
 type inFlightAction struct {
-	kind   actionKind
+	kind   ActionKind
 	ticket uint64
 	label  string
 }
@@ -35,7 +35,7 @@ type actionFeedback struct {
 }
 
 type confirmationState struct {
-	kind   actionKind
+	kind   ActionKind
 	prompt string
 }
 
@@ -47,8 +47,9 @@ type Model struct {
 	width    int
 	height   int
 
-	selectedJob  *jenkins.Job
-	recentBuilds []jenkins.Build
+	selectedJob   *jenkins.Job
+	recentBuilds  []jenkins.Build
+	parameterDefs []jenkins.ParameterDefinition
 
 	loading   bool
 	err       error
@@ -108,6 +109,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if msg.err != nil {
 			m.err = msg.err
 			m.recentBuilds = nil
+			m.parameterDefs = nil
 			if m.inFlight != nil && m.inFlight.ticket == msg.ticket {
 				cmds = append(cmds, m.setFeedbackWithTicket(msg.ticket, fmt.Sprintf("✗ %v", msg.err), true))
 				m.inFlight = nil
@@ -120,6 +122,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			jobCopy := msg.details.Job
 			m.selectedJob = &jobCopy
 			m.recentBuilds = append([]jenkins.Build(nil), msg.details.Builds...)
+			m.parameterDefs = append([]jenkins.ParameterDefinition(nil), msg.details.ParameterDefinitions...)
 		}
 
 		if m.inFlight != nil && m.inFlight.ticket == msg.ticket {
@@ -146,6 +149,20 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case actionMessageClearedMsg:
 		if m.feedback != nil && m.feedback.ticket == msg.ticket {
 			m.feedback = nil
+		}
+
+	case ParameterSubmissionMsg:
+		var submitCmd tea.Cmd
+		m, submitCmd = m.handleParameterSubmission(msg)
+		if submitCmd != nil {
+			cmds = append(cmds, submitCmd)
+		}
+
+	case ParameterCancelledMsg:
+		if m.selectedJob != nil && (msg.JobFullName == "" || msg.JobFullName == m.selectedJob.FullName) {
+			if cancelCmd := m.setFeedback("Parameter entry cancelled", false); cancelCmd != nil {
+				cmds = append(cmds, cancelCmd)
+			}
 		}
 
 	case tea.KeyMsg:
@@ -185,6 +202,7 @@ func (m *Model) handleJobSelected(job jenkins.Job, cmds *[]tea.Cmd) {
 	jobCopy := job
 	m.selectedJob = &jobCopy
 	m.recentBuilds = nil
+	m.parameterDefs = nil
 	m.loading = true
 	m.err = nil
 	m.viewport.GotoTop()
@@ -198,6 +216,7 @@ func (m *Model) handleJobCleared() {
 	m.err = nil
 	m.selectedJob = nil
 	m.recentBuilds = nil
+	m.parameterDefs = nil
 	m.resetActionState()
 	m.viewport.GotoTop()
 }
@@ -388,7 +407,8 @@ func (m *Model) appendRecentBuilds(b *strings.Builder) {
 
 func (m *Model) appendActions(b *strings.Builder) {
 	job := m.selectedJob
-	labels := buildActionLabels(job)
+	hasParams := len(m.parameterDefs) > 0
+	labels := buildActionLabels(job, hasParams)
 	if len(labels) == 0 {
 		b.WriteString(ui.SubtleStyle.Render("No actions available"))
 		b.WriteString("\n")
@@ -485,19 +505,22 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "b":
+		if m.hasParameterDefinitions() {
+			return m.requestAction(ActionKindViewParameters)
+		}
 		return m.startTriggerBuildAction()
 	case "a":
 		return m.startAbortPrompt()
 	case "r":
 		return m.startRefreshAction()
 	case "l":
-		return m.requestAction(actionKindViewLogs)
+		return m.requestAction(ActionKindViewLogs)
 	case "p":
-		return m.requestAction(actionKindViewParameters)
+		return m.requestAction(ActionKindViewParameters)
 	case "H":
-		return m.requestAction(actionKindViewHistory)
+		return m.requestAction(ActionKindViewHistory)
 	case "c":
-		return m.requestAction(actionKindViewConfig)
+		return m.requestAction(ActionKindViewConfig)
 	default:
 		return m, nil
 	}
@@ -512,7 +535,7 @@ func (m Model) handleConfirmationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case "y", "Y", "enter":
 		kind := m.confirmation.kind
 		m.confirmation = nil
-		if kind == actionKindAbortBuild {
+		if kind == ActionKindAbortBuild {
 			return m.startAbortExecution()
 		}
 		return m, nil
@@ -535,7 +558,7 @@ func (m Model) startTriggerBuildAction() (Model, tea.Cmd) {
 
 	ticket := m.nextActionTicket()
 	m.inFlight = &inFlightAction{
-		kind:   actionKindTriggerBuild,
+		kind:   ActionKindTriggerBuild,
 		ticket: ticket,
 		label:  fmt.Sprintf("Triggering build for %s...", job.Name),
 	}
@@ -551,7 +574,7 @@ func (m Model) startAbortPrompt() (Model, tea.Cmd) {
 	}
 	job := m.selectedJob
 	m.confirmation = &confirmationState{
-		kind:   actionKindAbortBuild,
+		kind:   ActionKindAbortBuild,
 		prompt: fmt.Sprintf("Abort running build #%d for %s? (y/N)", job.LastBuild.Number, job.Name),
 	}
 	return m, nil
@@ -564,7 +587,7 @@ func (m Model) startAbortExecution() (Model, tea.Cmd) {
 	job := m.selectedJob
 	ticket := m.nextActionTicket()
 	m.inFlight = &inFlightAction{
-		kind:   actionKindAbortBuild,
+		kind:   ActionKindAbortBuild,
 		ticket: ticket,
 		label:  fmt.Sprintf("Aborting build #%d...", job.LastBuild.Number),
 	}
@@ -582,7 +605,7 @@ func (m Model) startRefreshAction() (Model, tea.Cmd) {
 	m.err = nil
 	cmd, ticket := m.startJobDetailsRequest(jobCopy)
 	m.inFlight = &inFlightAction{
-		kind:   actionKindRefresh,
+		kind:   ActionKindRefresh,
 		ticket: ticket,
 		label:  fmt.Sprintf("Refreshing %s...", jobCopy.Name),
 	}
@@ -590,7 +613,7 @@ func (m Model) startRefreshAction() (Model, tea.Cmd) {
 	return m, tea.Batch(cmd, m.actionSpinner.Tick)
 }
 
-func (m Model) requestAction(kind actionKind) (Model, tea.Cmd) {
+func (m Model) requestAction(kind ActionKind) (Model, tea.Cmd) {
 	job := m.selectedJob
 	if job == nil {
 		return m, nil
@@ -603,36 +626,67 @@ func (m Model) requestAction(kind actionKind) (Model, tea.Cmd) {
 		buildPtr = &buildCopy
 	}
 
-	cmd := actionRequestCmd(kind, jobCopy, buildPtr)
+	var params []jenkins.ParameterDefinition
+	if kind == ActionKindViewParameters {
+		if len(m.parameterDefs) == 0 {
+			return m, m.setFeedback("No parameters configured for this job", true)
+		}
+		params = append(params, m.parameterDefs...)
+	}
+
+	cmd := actionRequestCmd(kind, jobCopy, buildPtr, params)
 	feedbackCmd := m.setFeedback(requestMessage(kind, &jobCopy), false)
 
 	return m, tea.Batch(cmd, feedbackCmd)
 }
 
-func defaultSuccessMessage(job *jenkins.Job, kind actionKind) string {
+func (m Model) handleParameterSubmission(msg ParameterSubmissionMsg) (Model, tea.Cmd) {
+	if m.client == nil || m.inFlight != nil {
+		return m, nil
+	}
+	if m.selectedJob == nil {
+		return m, m.setFeedback("No job selected", true)
+	}
+	if m.selectedJob.FullName != msg.JobFullName {
+		return m, m.setFeedback("Job changed before submission", true)
+	}
+
+	ticket := m.nextActionTicket()
+	m.inFlight = &inFlightAction{
+		kind:   ActionKindTriggerBuildWithParams,
+		ticket: ticket,
+		label:  fmt.Sprintf("Triggering build for %s...", m.selectedJob.Name),
+	}
+	m.feedback = nil
+
+	command := triggerBuildWithParamsCmd(m.client, m.selectedJob.Name, msg.JobFullName, msg.Values, ticket)
+	return m, tea.Batch(command, m.actionSpinner.Tick)
+}
+
+func defaultSuccessMessage(job *jenkins.Job, kind ActionKind) string {
 	name := jobDisplayName(job)
 	switch kind {
-	case actionKindTriggerBuild:
+	case ActionKindTriggerBuild, ActionKindTriggerBuildWithParams:
 		return fmt.Sprintf("✓ Build triggered for %s", name)
-	case actionKindAbortBuild:
+	case ActionKindAbortBuild:
 		return fmt.Sprintf("✓ Abort signal sent to %s", name)
-	case actionKindRefresh:
+	case ActionKindRefresh:
 		return fmt.Sprintf("✓ Refreshed %s", name)
 	default:
 		return "✓ Action completed"
 	}
 }
 
-func requestMessage(kind actionKind, job *jenkins.Job) string {
+func requestMessage(kind ActionKind, job *jenkins.Job) string {
 	name := jobDisplayName(job)
 	switch kind {
-	case actionKindViewLogs:
+	case ActionKindViewLogs:
 		return fmt.Sprintf("→ Opening console logs for %s", name)
-	case actionKindViewParameters:
+	case ActionKindViewParameters:
 		return fmt.Sprintf("→ Opening parameters for %s", name)
-	case actionKindViewHistory:
+	case ActionKindViewHistory:
 		return fmt.Sprintf("→ Opening build history for %s", name)
-	case actionKindViewConfig:
+	case ActionKindViewConfig:
 		return fmt.Sprintf("→ Opening configuration for %s", name)
 	default:
 		return "→ Action requested"
@@ -646,7 +700,7 @@ func jobDisplayName(job *jenkins.Job) string {
 	return job.Name
 }
 
-func buildActionLabels(job *jenkins.Job) []string {
+func buildActionLabels(job *jenkins.Job, hasParams bool) []string {
 	if job == nil {
 		return nil
 	}
@@ -658,18 +712,29 @@ func buildActionLabels(job *jenkins.Job) []string {
 		}
 	}
 
+	buildLabel := "b - Build now"
+	if hasParams {
+		buildLabel = "b - Configure & build"
+	}
+
 	labels := []string{
-		"b - Build now",
+		buildLabel,
 		"l - View logs",
 		"H - History",
 		"r - Refresh",
-		"p - Parameters",
-		"c - Config",
 	}
+	if hasParams {
+		labels = append(labels, "p - Parameters")
+	}
+	labels = append(labels, "c - Config")
 	if isBuildRunning(job) {
 		labels = append(labels, "a - Abort build")
 	}
 	return labels
+}
+
+func (m Model) hasParameterDefinitions() bool {
+	return len(m.parameterDefs) > 0
 }
 
 func isBuildRunning(job *jenkins.Job) bool {

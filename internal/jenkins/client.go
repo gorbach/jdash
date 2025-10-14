@@ -303,7 +303,8 @@ func (c *Client) GetJobDetails(fullName string, limit int) (*JobDetails, error) 
 	tree := fmt.Sprintf(
 		"name,fullName,url,color,_class,description,"+
 			"lastBuild[number,result,duration,timestamp,building,url,actions[causes[shortDescription,userId,userName],parameters[name,value],lastBuiltRevision[branch[SHA1,name]]]],"+
-			"builds[number,result,duration,timestamp,building,url,actions[causes[shortDescription,userId,userName],parameters[name,value],lastBuiltRevision[branch[SHA1,name]]]]{%d}",
+			"builds[number,result,duration,timestamp,building,url,actions[causes[shortDescription,userId,userName],parameters[name,value],lastBuiltRevision[branch[SHA1,name]]]]{%d},"+
+			"property[parameterDefinitions[_class,name,type,description,trim,defaultValue,projectName,referencedParameters[name],defaultParameterValue[name,value],choices]]",
 		limit,
 	)
 
@@ -323,13 +324,28 @@ func (c *Client) GetJobDetails(fullName string, limit int) (*JobDetails, error) 
 		return nil, fmt.Errorf("failed to fetch job details: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	var details JobDetails
-	if err := json.NewDecoder(resp.Body).Decode(&details); err != nil {
+	var payload struct {
+		JobDetails
+		// Flatten property definitions to parameter list
+		Property []struct {
+			ParameterDefinitions []ParameterDefinition `json:"parameterDefinitions"`
+		} `json:"property"`
+	}
+
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(&payload); err != nil {
 		return nil, fmt.Errorf("failed to decode job details: %w", err)
 	}
 
+	details := payload.JobDetails
 	if len(details.Builds) > limit {
 		details.Builds = details.Builds[:limit]
+	}
+	for _, prop := range payload.Property {
+		if len(prop.ParameterDefinitions) == 0 {
+			continue
+		}
+		details.ParameterDefinitions = append(details.ParameterDefinitions, prop.ParameterDefinitions...)
 	}
 
 	return &details, nil
@@ -361,6 +377,45 @@ func (c *Client) TriggerBuild(fullName string) error {
 	default:
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("failed to trigger build: status %d, body: %s", resp.StatusCode, string(body))
+	}
+}
+
+// TriggerBuildWithParameters requests a new build providing parameter values.
+func (c *Client) TriggerBuildWithParameters(fullName string, params map[string]string) error {
+	if fullName == "" {
+		return fmt.Errorf("job name must not be empty")
+	}
+
+	jobPath := buildJobAPIPath(fullName)
+	if jobPath == "" {
+		return fmt.Errorf("invalid job path for %q", fullName)
+	}
+
+	form := url.Values{}
+	for key, value := range params {
+		form.Set(key, value)
+	}
+
+	path := fmt.Sprintf("%s/buildWithParameters", jobPath)
+	resp, err := c.doRequest(
+		http.MethodPost,
+		path,
+		strings.NewReader(form.Encode()),
+		map[string]string{
+			"Content-Type": "application/x-www-form-urlencoded",
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to trigger build with parameters: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusCreated, http.StatusAccepted:
+		return nil
+	default:
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to trigger build with parameters: status %d, body: %s", resp.StatusCode, string(body))
 	}
 }
 

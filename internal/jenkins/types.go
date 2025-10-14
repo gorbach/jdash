@@ -186,7 +186,60 @@ type BuildBranch struct {
 // JobDetails provides expanded information about a Jenkins job.
 type JobDetails struct {
 	Job
-	Builds []Build `json:"builds"`
+	Builds               []Build               `json:"builds"`
+	ParameterDefinitions []ParameterDefinition `json:"-"`
+}
+
+// ParameterDefinition describes a parameter configured on a Jenkins job.
+type ParameterDefinition struct {
+	Class                string                   `json:"_class"`
+	Name                 string                   `json:"name"`
+	Type                 string                   `json:"type"`
+	Description          string                   `json:"description"`
+	DefaultParameter     *ParameterDefaultValue   `json:"defaultParameterValue"`
+	Choices              []string                 `json:"choices"`
+	Trim                 bool                     `json:"trim"`
+	BooleanDefault       bool                     `json:"defaultValue"`
+	ProjectName          string                   `json:"projectName"`
+	ReferencedParameters []ReferencedParameterRef `json:"referencedParameters"`
+}
+
+// ParameterDefaultValue represents the default value object for parameter definitions.
+type ParameterDefaultValue struct {
+	Name  string      `json:"name"`
+	Value interface{} `json:"value"`
+}
+
+// ReferencedParameterRef represents a reference for copy parameter definitions.
+type ReferencedParameterRef struct {
+	Name string `json:"name"`
+}
+
+// GetType returns a simplified type string for the parameter definition.
+func (p ParameterDefinition) GetType() string {
+	if p.Type != "" {
+		return p.Type
+	}
+	if p.Class != "" {
+		return p.Class
+	}
+	return ""
+}
+
+// DefaultValueString renders the default value as a string.
+func (p ParameterDefinition) DefaultValueString() string {
+	if p.DefaultParameter != nil && p.DefaultParameter.Value != nil {
+		return fmt.Sprint(p.DefaultParameter.Value)
+	}
+	switch strings.ToLower(p.GetType()) {
+	case "booleanparameterdefinition", "hudson.model.booleanparameterdefinition":
+		if p.BooleanDefault {
+			return "true"
+		}
+		return "false"
+	default:
+		return ""
+	}
 }
 
 // JobsResponse represents the response from Jenkins API when fetching all jobs
