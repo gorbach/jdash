@@ -58,6 +58,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 	}
 	if handled {
+		switch msg.(type) {
+		case parameters.SubmittedMsg, parameters.CancelledMsg:
+			handled = false
+		}
+	}
+	if handled {
 		return m, tea.Batch(cmds...)
 	}
 
