@@ -3,7 +3,7 @@ package jobs
 import (
 	"strings"
 
-	"github.com/gorbach/jenkins-gotui/internal/jenkins"
+	"github.com/gorbach/jdash/internal/jenkins"
 )
 
 // JobTree represents a node in the hierarchical job tree

@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/gorbach/jenkins-gotui/internal/jenkins"
+	"github.com/gorbach/jdash/internal/jenkins"
 )
 
 // FocusField represents which field is currently focused

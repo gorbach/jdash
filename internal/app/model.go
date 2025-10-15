@@ -3,10 +3,10 @@ package app
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/gorbach/jenkins-gotui/internal/jenkins"
-	"github.com/gorbach/jenkins-gotui/internal/jobs"
-	"github.com/gorbach/jenkins-gotui/internal/queue"
-	"github.com/gorbach/jenkins-gotui/internal/statusbar"
+	"github.com/gorbach/jdash/internal/jenkins"
+	"github.com/gorbach/jdash/internal/jobs"
+	"github.com/gorbach/jdash/internal/queue"
+	"github.com/gorbach/jdash/internal/statusbar"
 )
 
 // PanelID represents which panel is active.

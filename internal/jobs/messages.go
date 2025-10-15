@@ -2,7 +2,7 @@ package jobs
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/gorbach/jenkins-gotui/internal/jenkins"
+	"github.com/gorbach/jdash/internal/jenkins"
 )
 
 // JobsFetchedMsg is sent when jobs have been successfully fetched from Jenkins

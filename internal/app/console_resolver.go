@@ -4,8 +4,8 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/gorbach/jenkins-gotui/internal/console"
-	"github.com/gorbach/jenkins-gotui/internal/jenkins"
+	"github.com/gorbach/jdash/internal/console"
+	"github.com/gorbach/jdash/internal/jenkins"
 )
 
 type consoleTargetResolvedMsg struct {

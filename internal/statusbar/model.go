@@ -130,7 +130,7 @@ func (m Model) View() string {
 		Padding(0, 1)
 
 	parts := []string{
-		"jenkins-tui",
+		"jdash",
 		fmt.Sprintf("Connected: %s", formatServerURL(m.serverURL)),
 	}
 

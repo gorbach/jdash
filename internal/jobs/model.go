@@ -8,8 +8,8 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/gorbach/jenkins-gotui/internal/jenkins"
-	"github.com/gorbach/jenkins-gotui/internal/ui"
+	"github.com/gorbach/jdash/internal/jenkins"
+	"github.com/gorbach/jdash/internal/ui"
 )
 
 // Model represents the jobs list panel

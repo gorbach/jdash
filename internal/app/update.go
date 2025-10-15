@@ -5,12 +5,12 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/gorbach/jenkins-gotui/internal/console"
-	"github.com/gorbach/jenkins-gotui/internal/details"
-	"github.com/gorbach/jenkins-gotui/internal/jobs"
-	"github.com/gorbach/jenkins-gotui/internal/parameters"
-	"github.com/gorbach/jenkins-gotui/internal/queue"
-	"github.com/gorbach/jenkins-gotui/internal/statusbar"
+	"github.com/gorbach/jdash/internal/console"
+	"github.com/gorbach/jdash/internal/details"
+	"github.com/gorbach/jdash/internal/jobs"
+	"github.com/gorbach/jdash/internal/parameters"
+	"github.com/gorbach/jdash/internal/queue"
+	"github.com/gorbach/jdash/internal/statusbar"
 )
 
 type panelDimensions struct {

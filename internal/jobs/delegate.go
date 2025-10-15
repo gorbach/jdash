@@ -7,8 +7,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/gorbach/jenkins-gotui/internal/ui"
-	"github.com/gorbach/jenkins-gotui/internal/utils"
+	"github.com/gorbach/jdash/internal/ui"
+	"github.com/gorbach/jdash/internal/utils"
 )
 
 // jobDelegate implements list.ItemDelegate for rendering JobTree nodes

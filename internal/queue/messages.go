@@ -3,7 +3,7 @@ package queue
 import (
 	"time"
 
-	"github.com/gorbach/jenkins-gotui/internal/jenkins"
+	"github.com/gorbach/jdash/internal/jenkins"
 )
 
 // tickMsg is sent every second to update elapsed times

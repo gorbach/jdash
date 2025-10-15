@@ -7,10 +7,10 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/gorbach/jenkins-gotui/internal/jenkins"
-	"github.com/gorbach/jenkins-gotui/internal/jobs"
-	"github.com/gorbach/jenkins-gotui/internal/ui"
-	"github.com/gorbach/jenkins-gotui/internal/utils"
+	"github.com/gorbach/jdash/internal/jenkins"
+	"github.com/gorbach/jdash/internal/jobs"
+	"github.com/gorbach/jdash/internal/ui"
+	"github.com/gorbach/jdash/internal/utils"
 )
 
 const maxRecentBuilds = 10

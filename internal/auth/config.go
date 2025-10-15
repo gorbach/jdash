@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/gorbach/jenkins-gotui/internal/jenkins"
+	"github.com/gorbach/jdash/internal/jenkins"
 )
 
 // ServerConfig holds Jenkins server credentials
@@ -47,7 +47,7 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	configDir = filepath.Join(home, ".jenkins-tui")
+	configDir = filepath.Join(home, ".jdash")
 	configFile = filepath.Join(configDir, "config.json")
 }
 

@@ -4,8 +4,9 @@
 *.dll
 *.so
 *.dylib
-jenkins-gotui
-jenkins-gotui.exe
+
+jdash
+jdash.exe
 
 # Test binary, built with `go test -c`
 *.test

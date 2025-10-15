@@ -9,9 +9,9 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/gorbach/jenkins-gotui/internal/jenkins"
-	"github.com/gorbach/jenkins-gotui/internal/ui"
-	"github.com/gorbach/jenkins-gotui/internal/utils"
+	"github.com/gorbach/jdash/internal/jenkins"
+	"github.com/gorbach/jdash/internal/ui"
+	"github.com/gorbach/jdash/internal/utils"
 )
 
 const (

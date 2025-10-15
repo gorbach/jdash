@@ -5,8 +5,8 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/gorbach/jenkins-gotui/internal/app"
-	"github.com/gorbach/jenkins-gotui/internal/auth"
+	"github.com/gorbach/jdash/internal/app"
+	"github.com/gorbach/jdash/internal/auth"
 )
 
 func main() {

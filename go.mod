@@ -1,4 +1,4 @@
-module github.com/gorbach/jenkins-gotui
+module github.com/gorbach/jdash
 
 go 1.25.2
 
