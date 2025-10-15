@@ -3,7 +3,7 @@
 *A terminal dashboard for Jenkins*
 
 ![Status: Alpha](https://img.shields.io/badge/status-alpha-orange)
-![Go 1.21+](https://img.shields.io/badge/go-1.21+-blue)
+![Go 1.25+](https://img.shields.io/badge/go-1.21+-blue)
 
 <!-- Demo GIF/screenshot will go here when available -->
 
@@ -33,7 +33,7 @@ cd jdash
 go build -o jdash
 ```
 
-**Prerequisites:** Go 1.21 or higher
+**Prerequisites:** Go 1.25 or higher
 
 ## Getting Started
 
