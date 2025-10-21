@@ -9,7 +9,22 @@ import (
 	"github.com/gorbach/jdash/internal/auth"
 )
 
+// Version information set by goreleaser at build time
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
+	// Handle version flag
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
+		fmt.Printf("jdash %s\n", version)
+		fmt.Printf("  commit: %s\n", commit)
+		fmt.Printf("  built:  %s\n", date)
+		return
+	}
+
 	// Check if we already have server config
 	hasConfig := auth.HasServerConfig()
 
