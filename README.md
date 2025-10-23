@@ -2,6 +2,7 @@
 
 *A terminal dashboard for Jenkins*
 
+[![Go Tests](https://github.com/gorbach/jdash/actions/workflows/build.yml/badge.svg)](https://github.com/gorbach/jdash/actions/workflows/build.yml)
 ![Status: Alpha](https://img.shields.io/badge/status-alpha-orange)
 ![Go 1.25+](https://img.shields.io/badge/go-1.21+-blue)
 
