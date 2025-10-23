@@ -19,14 +19,14 @@ type Model struct {
 	queuedItems   []jenkins.QueueItem
 	runningBuilds []jenkins.RunningBuild
 	spinner       spinner.Model
-	client        *jenkins.Client
+	client        jenkins.JenkinsClient
 	polling       bool
 	lastPoll      time.Time
 	err           error
 }
 
 // New creates a new queue panel model
-func New(client *jenkins.Client) Model {
+func New(client jenkins.JenkinsClient) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("11")) // Yellow

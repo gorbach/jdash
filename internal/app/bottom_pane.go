@@ -13,7 +13,7 @@ type bottomPane struct {
 	console console.Model
 }
 
-func newBottomPane(client *jenkins.Client) bottomPane {
+func newBottomPane(client jenkins.JenkinsClient) bottomPane {
 	return bottomPane{
 		active:  bottomViewDetails,
 		details: details.New(client),

@@ -74,7 +74,7 @@ func (t consoleTargetTracker) ApplyResolution(msg consoleTargetResolvedMsg) (con
 	return t, &open
 }
 
-func resolveConsoleTargetCmd(client *jenkins.Client, jobFullName string) tea.Cmd {
+func resolveConsoleTargetCmd(client jenkins.JenkinsClient, jobFullName string) tea.Cmd {
 	if client == nil || jobFullName == "" {
 		return nil
 	}

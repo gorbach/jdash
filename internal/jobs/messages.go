@@ -27,7 +27,7 @@ type JobSelectionClearedMsg struct{}
 type RefreshRequestedMsg struct{}
 
 // fetchJobsCmd creates a command to fetch all jobs from Jenkins
-func fetchJobsCmd(client *jenkins.Client) tea.Cmd {
+func fetchJobsCmd(client jenkins.JenkinsClient) tea.Cmd {
 	return func() tea.Msg {
 		jobs, err := client.GetAllJobs()
 		if err != nil {

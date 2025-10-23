@@ -12,6 +12,39 @@ import (
 	"time"
 )
 
+// JenkinsClient defines the interface for interacting with Jenkins API
+type JenkinsClient interface {
+	// TestConnection tests the connection to Jenkins server
+	TestConnection() error
+
+	// GetAllJobs fetches all jobs from Jenkins, including nested jobs in folders
+	GetAllJobs() ([]Job, error)
+
+	// GetJobDetails fetches detailed information about a specific job, including recent builds
+	GetJobDetails(fullName string, limit int) (*JobDetails, error)
+
+	// GetBuildQueue fetches the current build queue from Jenkins
+	GetBuildQueue() ([]QueueItem, error)
+
+	// GetRunningBuilds fetches currently executing builds from all Jenkins executors
+	GetRunningBuilds() ([]RunningBuild, error)
+
+	// TriggerBuild requests a new build for the specified job
+	TriggerBuild(fullName string) error
+
+	// TriggerBuildWithParameters requests a new build providing parameter values
+	TriggerBuildWithParameters(fullName string, params map[string]string) error
+
+	// AbortBuild sends a stop signal to a running build
+	AbortBuild(fullName string, buildNumber int) error
+
+	// GetBuild fetches build details for the given job
+	GetBuild(fullName string, number int) (*Build, error)
+
+	// GetProgressiveLog fetches a chunk of console output using Jenkins' progressive log API
+	GetProgressiveLog(buildURL, fullName string, buildNumber int, start int64) (string, int64, bool, error)
+}
+
 // Client represents a Jenkins API client
 type Client struct {
 	BaseURL    string
@@ -32,7 +65,7 @@ type Credentials struct {
 }
 
 // NewClient creates a new Jenkins client
-func NewClient(creds Credentials) *Client {
+func NewClient(creds Credentials) JenkinsClient {
 	return &Client{
 		BaseURL:  creds.URL,
 		Username: creds.Username,

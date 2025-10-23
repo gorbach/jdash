@@ -147,7 +147,7 @@ func GetServerConfig() (*ServerConfig, error) {
 }
 
 // CreateJenkinsClient creates a Jenkins client from server config
-func CreateJenkinsClient(config *ServerConfig) *jenkins.Client {
+func CreateJenkinsClient(config *ServerConfig) jenkins.JenkinsClient {
 	return jenkins.NewClient(jenkins.Credentials{
 		URL:      config.URL,
 		Username: config.Username,

@@ -56,7 +56,7 @@ type RefreshRequestedMsg struct{}
 
 // Model implements a viewport-based console log viewer with live streaming, search, and auto-scroll.
 type Model struct {
-	client *jenkins.Client
+	client jenkins.JenkinsClient
 
 	viewport viewport.Model
 	width    int
@@ -90,7 +90,7 @@ type Model struct {
 }
 
 // New creates a new console model.
-func New(client *jenkins.Client) Model {
+func New(client jenkins.JenkinsClient) Model {
 	vp := viewport.New(0, 0)
 
 	ti := textinput.New()

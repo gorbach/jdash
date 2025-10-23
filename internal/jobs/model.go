@@ -14,7 +14,7 @@ import (
 
 // Model represents the jobs list panel
 type Model struct {
-	client               *jenkins.Client
+	client               jenkins.JenkinsClient
 	tree                 *JobTree
 	allJobs              []jenkins.Job
 	list                 list.Model
@@ -35,7 +35,7 @@ type Model struct {
 }
 
 // New creates a new jobs panel model
-func New(client *jenkins.Client) Model {
+func New(client jenkins.JenkinsClient) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = ui.BuildingStyle

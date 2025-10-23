@@ -44,7 +44,7 @@ type RefreshRequestedMsg struct{}
 
 // Model represents the job details panel.
 type Model struct {
-	client *jenkins.Client
+	client jenkins.JenkinsClient
 
 	viewport viewport.Model
 	width    int
@@ -66,7 +66,7 @@ type Model struct {
 }
 
 // New creates a new details panel model.
-func New(client *jenkins.Client) Model {
+func New(client jenkins.JenkinsClient) Model {
 	vp := viewport.New(0, 0)
 	actSpinner := spinner.New()
 	actSpinner.Spinner = spinner.Dot

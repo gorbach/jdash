@@ -53,7 +53,7 @@ type ParameterCancelledMsg struct {
 
 const actionFeedbackDuration = 3 * time.Second
 
-func triggerBuildCmd(client *jenkins.Client, jobName, jobFullName string, ticket uint64) tea.Cmd {
+func triggerBuildCmd(client jenkins.JenkinsClient, jobName, jobFullName string, ticket uint64) tea.Cmd {
 	return func() tea.Msg {
 		if client == nil {
 			return actionResultMsg{
@@ -79,7 +79,7 @@ func triggerBuildCmd(client *jenkins.Client, jobName, jobFullName string, ticket
 	}
 }
 
-func abortBuildCmd(client *jenkins.Client, jobName, jobFullName string, buildNumber int, ticket uint64) tea.Cmd {
+func abortBuildCmd(client jenkins.JenkinsClient, jobName, jobFullName string, buildNumber int, ticket uint64) tea.Cmd {
 	return func() tea.Msg {
 		if client == nil {
 			return actionResultMsg{
@@ -112,7 +112,7 @@ func abortBuildCmd(client *jenkins.Client, jobName, jobFullName string, buildNum
 	}
 }
 
-func triggerBuildWithParamsCmd(client *jenkins.Client, jobName, jobFullName string, values map[string]string, ticket uint64) tea.Cmd {
+func triggerBuildWithParamsCmd(client jenkins.JenkinsClient, jobName, jobFullName string, values map[string]string, ticket uint64) tea.Cmd {
 	return func() tea.Msg {
 		if client == nil {
 			return actionResultMsg{

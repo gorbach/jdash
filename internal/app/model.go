@@ -80,7 +80,7 @@ type Model struct {
 	height int
 
 	serverURL string
-	client    *jenkins.Client
+	client    jenkins.JenkinsClient
 
 	jobsPanel  jobs.Model
 	queuePanel queue.Model
@@ -93,7 +93,7 @@ type Model struct {
 }
 
 // New creates a new application model.
-func New(serverURL string, client *jenkins.Client) Model {
+func New(serverURL string, client jenkins.JenkinsClient) Model {
 	help := newHelpOverlay(helpContent)
 	bottom := newBottomPane(client)
 
