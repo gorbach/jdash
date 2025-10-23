@@ -37,5 +37,5 @@ jobs:
       with:
         name: Go Tests
         path: test-report.json
-        reporter: go-test-json
+        reporter: golang-json
         fail-on-error: true
