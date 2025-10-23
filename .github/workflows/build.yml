@@ -13,6 +13,9 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
     steps:
     - uses: actions/checkout@v4
 
@@ -25,4 +28,14 @@ jobs:
       run: go build -v ./...
 
     - name: Test
-      run: go test -v ./...
+      run: go test -json ./... > test-report.json
+      continue-on-error: true
+
+    - name: Test Report
+      uses: dorny/test-reporter@v2
+      if: always()
+      with:
+        name: Go Tests
+        path: test-report.json
+        reporter: golang-json
+        fail-on-error: true
