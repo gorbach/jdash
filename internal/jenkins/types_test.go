@@ -17,7 +17,7 @@ func TestJob_GetStatus(t *testing.T) {
 				Jobs:  []Job{{Name: "child"}},
 				Color: "notbuilt",
 			},
-			want: "FOLDER",
+			want: StatusFolder,
 		},
 		{
 			name: "folder class - cloudbees",
@@ -26,7 +26,7 @@ func TestJob_GetStatus(t *testing.T) {
 				Class: "com.cloudbees.hudson.plugins.folder.Folder",
 				Color: "blue",
 			},
-			want: "FOLDER",
+			want: StatusFolder,
 		},
 		{
 			name: "folder class - multibranch",
@@ -35,7 +35,7 @@ func TestJob_GetStatus(t *testing.T) {
 				Class: "org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject",
 				Color: "red",
 			},
-			want: "FOLDER",
+			want: StatusFolder,
 		},
 		{
 			name: "never built - nil LastBuild",
@@ -44,7 +44,7 @@ func TestJob_GetStatus(t *testing.T) {
 				LastBuild: nil,
 				Color:     "notbuilt",
 			},
-			want: "NEVER_BUILT",
+			want: StatusNeverBuilt,
 		},
 		{
 			name: "building - LastBuild.Building is true",
@@ -56,7 +56,7 @@ func TestJob_GetStatus(t *testing.T) {
 				},
 				Color: "blue_anime",
 			},
-			want: "BUILDING",
+			want: StatusBuilding,
 		},
 		{
 			name: "success - blue color",
@@ -69,7 +69,7 @@ func TestJob_GetStatus(t *testing.T) {
 				},
 				Color: "blue",
 			},
-			want: "SUCCESS",
+			want: StatusSuccess,
 		},
 		{
 			name: "success - blue_anime color (building but not flagged)",
@@ -82,7 +82,7 @@ func TestJob_GetStatus(t *testing.T) {
 				},
 				Color: "blue_anime",
 			},
-			want: "SUCCESS",
+			want: StatusSuccess,
 		},
 		{
 			name: "failed - red color",
@@ -95,7 +95,7 @@ func TestJob_GetStatus(t *testing.T) {
 				},
 				Color: "red",
 			},
-			want: "FAILED",
+			want: StatusFailed,
 		},
 		{
 			name: "failed - red_anime color",
@@ -108,7 +108,7 @@ func TestJob_GetStatus(t *testing.T) {
 				},
 				Color: "red_anime",
 			},
-			want: "FAILED",
+			want: StatusFailed,
 		},
 		{
 			name: "unstable - yellow color",
@@ -121,7 +121,7 @@ func TestJob_GetStatus(t *testing.T) {
 				},
 				Color: "yellow",
 			},
-			want: "UNSTABLE",
+			want: StatusUnstable,
 		},
 		{
 			name: "unstable - yellow_anime color",
@@ -134,7 +134,7 @@ func TestJob_GetStatus(t *testing.T) {
 				},
 				Color: "yellow_anime",
 			},
-			want: "UNSTABLE",
+			want: StatusUnstable,
 		},
 		{
 			name: "pending - grey color",
@@ -146,7 +146,7 @@ func TestJob_GetStatus(t *testing.T) {
 				},
 				Color: "grey",
 			},
-			want: "PENDING",
+			want: StatusPending,
 		},
 		{
 			name: "disabled - disabled color",
@@ -158,7 +158,7 @@ func TestJob_GetStatus(t *testing.T) {
 				},
 				Color: "disabled",
 			},
-			want: "DISABLED",
+			want: StatusDisabled,
 		},
 		{
 			name: "aborted - aborted color",
@@ -171,7 +171,7 @@ func TestJob_GetStatus(t *testing.T) {
 				},
 				Color: "aborted",
 			},
-			want: "ABORTED",
+			want: StatusAborted,
 		},
 		{
 			name: "not built - notbuilt color",
@@ -183,7 +183,7 @@ func TestJob_GetStatus(t *testing.T) {
 				},
 				Color: "notbuilt",
 			},
-			want: "NOT_BUILT",
+			want: StatusNotBuilt,
 		},
 		{
 			name: "unknown color with result",
@@ -208,7 +208,7 @@ func TestJob_GetStatus(t *testing.T) {
 				},
 				Color: "unknown_color",
 			},
-			want: "UNKNOWN",
+			want: StatusUnknown,
 		},
 		{
 			name: "empty color with LastBuild",
@@ -220,7 +220,7 @@ func TestJob_GetStatus(t *testing.T) {
 				},
 				Color: "",
 			},
-			want: "UNKNOWN",
+			want: StatusUnknown,
 		},
 	}
 

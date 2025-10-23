@@ -1,5 +1,7 @@
 package ui
 
+import "github.com/gorbach/jdash/internal/jenkins"
+
 // Status icons as specified in docs2.md
 const (
 	IconSuccess  = "✓"
@@ -19,21 +21,21 @@ const (
 // GetStatusIcon returns the appropriate icon for a given status
 func GetStatusIcon(status string) string {
 	switch status {
-	case "SUCCESS":
+	case jenkins.StatusSuccess:
 		return IconSuccess
-	case "FAILED":
+	case jenkins.StatusFailed:
 		return IconFailed
-	case "BUILDING":
+	case jenkins.StatusBuilding:
 		return IconBuilding
-	case "UNSTABLE":
+	case jenkins.StatusUnstable:
 		return IconUnstable
-	case "DISABLED":
+	case jenkins.StatusDisabled:
 		return IconDisabled
-	case "ABORTED":
+	case jenkins.StatusAborted:
 		return IconAborted
-	case "PENDING", "NOT_BUILT", "NEVER_BUILT":
+	case jenkins.StatusPending, jenkins.StatusNotBuilt, jenkins.StatusNeverBuilt:
 		return IconPending
-	case "FOLDER":
+	case jenkins.StatusFolder:
 		return IconFolder
 	default:
 		return IconPending

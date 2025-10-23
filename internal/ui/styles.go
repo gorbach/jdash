@@ -1,6 +1,9 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/charmbracelet/lipgloss"
+	"github.com/gorbach/jdash/internal/jenkins"
+)
 
 // Color definitions based on spec
 var (
@@ -62,19 +65,19 @@ var (
 // GetStatusStyle returns the appropriate style for a given status
 func GetStatusStyle(status string) lipgloss.Style {
 	switch status {
-	case "SUCCESS":
+	case jenkins.StatusSuccess:
 		return SuccessStyle
-	case "FAILED":
+	case jenkins.StatusFailed:
 		return FailedStyle
-	case "BUILDING":
+	case jenkins.StatusBuilding:
 		return BuildingStyle
-	case "UNSTABLE":
+	case jenkins.StatusUnstable:
 		return UnstableStyle
-	case "DISABLED":
+	case jenkins.StatusDisabled:
 		return DisabledStyle
-	case "ABORTED":
+	case jenkins.StatusAborted:
 		return AbortedStyle
-	case "PENDING", "NOT_BUILT", "NEVER_BUILT":
+	case jenkins.StatusPending, jenkins.StatusNotBuilt, jenkins.StatusNeverBuilt:
 		return PendingStyle
 	default:
 		return SubtleStyle

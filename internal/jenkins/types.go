@@ -45,38 +45,38 @@ func (j *Job) IsFolder() bool {
 // GetStatus returns a normalized status string for display
 func (j *Job) GetStatus() string {
 	if j.IsFolder() {
-		return "FOLDER"
+		return StatusFolder
 	}
 
 	if j.LastBuild == nil {
-		return "NEVER_BUILT"
+		return StatusNeverBuilt
 	}
 
 	if j.LastBuild.Building {
-		return "BUILDING"
+		return StatusBuilding
 	}
 
 	// Jenkins uses color codes: blue/blue_anime, red/red_anime, yellow/yellow_anime, grey, disabled, aborted, notbuilt
 	switch {
 	case j.Color == "blue" || j.Color == "blue_anime":
-		return "SUCCESS"
+		return StatusSuccess
 	case j.Color == "red" || j.Color == "red_anime":
-		return "FAILED"
+		return StatusFailed
 	case j.Color == "yellow" || j.Color == "yellow_anime":
-		return "UNSTABLE"
+		return StatusUnstable
 	case j.Color == "grey":
-		return "PENDING"
+		return StatusPending
 	case j.Color == "disabled":
-		return "DISABLED"
+		return StatusDisabled
 	case j.Color == "aborted":
-		return "ABORTED"
+		return StatusAborted
 	case j.Color == "notbuilt":
-		return "NOT_BUILT"
+		return StatusNotBuilt
 	default:
 		if j.LastBuild.Result != "" {
 			return j.LastBuild.Result
 		}
-		return "UNKNOWN"
+		return StatusUnknown
 	}
 }
 
@@ -96,10 +96,10 @@ func (b *Build) GetStatus() string {
 		return ""
 	}
 	if b.Building {
-		return "BUILDING"
+		return StatusBuilding
 	}
 	if b.Result == "" {
-		return "UNKNOWN"
+		return StatusUnknown
 	}
 	return strings.ToUpper(b.Result)
 }
